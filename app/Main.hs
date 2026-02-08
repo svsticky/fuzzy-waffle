@@ -23,4 +23,4 @@ app = do
     get ("hello" <//> var) $ \name -> do
         (DummyAppState ref) <- getState
         visitorNumber <- liftIO $ atomicModifyIORef' ref $ \i -> (i+1,i+1)
-        text ("Hello " <> name <> ", you are visitor number " <> T.pack (show visitorNumber))
+        text ("Bye " <> name <> ", you are visitor number " <> T.pack (show visitorNumber))
