@@ -1,26 +1,33 @@
 {-# LANGUAGE OverloadedStrings #-}
+
 module Main where
 
-import Web.Spock
-import Web.Spock.Config
-
-import Control.Monad.Trans
-import Data.IORef
-import qualified Data.Text as T
-
-data MySession = EmptySession
-data MyAppState = DummyAppState (IORef Int)
+import Network.Wai
+import Network.Wai.Handler.Warp
+import Network.HTTP.Types
 
 main :: IO ()
 main = do
-    ref <- newIORef 0
-    spockCfg <- defaultSpockCfg EmptySession PCNoDatabase (DummyAppState ref)
-    runSpock 8080 (spock spockCfg app)
-
-app :: SpockM () MySession MyAppState ()
-app = do
-    get root $ text "Hello World!"
-    get ("hello" <//> var) $ \name -> do
-        (DummyAppState ref) <- getState
-        visitorNumber <- liftIO $ atomicModifyIORef' ref $ \i -> (i+1,i+1)
-        text ("Bye " <> name <> ", you are visitor number " <> T.pack (show visitorNumber))
+    let settings = setPort 8080 $ setHost "192.168.2.31" defaultSettings 
+    putStrLn "listening"
+    runSettings settings app
+    
+app :: Application
+app req res =
+    res $ case rawPathInfo req of
+        "/" -> helloRoute
+        _ -> notFoundRoute
+        
+helloRoute :: Response
+helloRoute = 
+    responseLBS
+    status200
+    []
+    "Hello, world!"
+    
+notFoundRoute :: Response
+notFoundRoute =
+    responseLBS
+    status404
+    [(hContentType, "application/json")]
+    "404 - Not Found"
