@@ -1,0 +1,24 @@
+[
+    {
+        "better": "u1",
+        "bettees": [
+            {
+                "name": "Job Vonk",
+                "function": "Chair"
+            },
+            {
+                "name": "Silas Peters",
+                "function": "Feut"
+            }
+        ]
+    },
+    {
+        "better": "u2",
+        "bettees": [
+            {
+                "name": "Koen de Ruijter",
+                "function": "Commissaris IT"
+            }
+        ]
+    }
+]
