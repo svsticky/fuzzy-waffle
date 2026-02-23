@@ -1,0 +1,7 @@
+TODO:
+- finish oAuth
+- create input form
+- clean up Main.hs 
+    - move stuff to env
+    - split oAuth, split layout, etc
+- add comments!
