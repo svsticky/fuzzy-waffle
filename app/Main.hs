@@ -58,38 +58,29 @@ main = do
 app :: Manager -> Application
 app manager req res = do
     let headers = W.requestHeaders req
-    print headers
     eitherDisc <- O.discovery (`httpLbs` manager) (N.URI "https:" (Just $ N.URIAuth "" "koala.dev.svsticky.nl" "") "" "" "")
     let ar = defaultAuthenticationRequest "openid member-read email profile" (Credentials "e1aacf592e92eedf71dea19f8c40b5ea5d51ebe3e30b29b843cfc05cb91aadd6" (AssignedSecretText "86b191438b892b9cac2e8d3e4db5f96a711628c49704366e78d3ebde98c28380b") (N.URI "" Nothing "login" "" "" `N.relativeTo` N.URI "http:" (Just $ N.URIAuth "" "0.0.0.0" ":8080") "" "" ""))
-    print $ authRequestRedirectURI ar
     case eitherDisc of
         Left err -> error $ show err
         Right (discov,time') -> do
-            case lookup "Set-Cookie" headers of
+            case lookup "Cookie" headers of
                 Just c -> case rawPathInfo req of
                     "/" -> res $ responseLBS status200 [("Content-Type", "text/html")] (renderHtml page)
                     "/login" -> do
-                        putStrLn "aaaaa"
                         let qry = W.queryString req
-                        print qry
                         let code = case lookup "code" qry of
                                 Just (Just s) -> s
                                 _ -> error "no code found"
-                        print code
                         let state = case lookup "state" qry of
                                 Just (Just s) -> s
                                 _ -> error "no state found"
-                        print state
                         kys' <- keysFromDiscovery (`httpLbs` manager) discov
-                        print kys'
                         let kys = case kys' of
                                 Left err -> error $ show err
                                 Right k -> fst k
-                        print kys
                         let val = case lookup "oauth" $ parseCookies c of
                                 Just v -> v
                                 Nothing -> error "no cookie set"
-                        print val
                         authResult <- authenticationSuccess (`httpLbs` manager) (fromJust time') (Provider discov kys) (Credentials "e1aacf592e92eedf71dea19f8c40b5ea5d51ebe3e30b29b843cfc05cb91aadd6" (AssignedSecretText "86b191438b892b9cac2e8d3e4db5f96a711628c49704366e78d3ebde98c28380b") (N.URI "http:" (Just $ N.URIAuth "" "0.0.0.0" ":8080") "" "" "")) (UserReturnFromRedirect val code state)
                         case authResult of
                             Left err -> error $ show err
@@ -102,7 +93,7 @@ app manager req res = do
                             Left err -> error $ show err
                             Right (RedirectTo uri f) -> do
                                 let cookie = f "oauth"
-                                res $ mapResponseHeaders (("Set-Cookie", B.pack $ show cookie) :) $ responseLBS status302 [("Location",fromString $ show uri)] empty
+                                res $ responseLBS status302 [("Location",fromString $ show uri), ("Set-Cookie", setCookieName cookie <> "=" <> setCookieValue cookie <> "; SameSite=None")] empty
                     _ -> res notFoundRoute
 
 
