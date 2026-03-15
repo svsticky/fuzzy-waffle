@@ -8,31 +8,24 @@ import Network.Wai as W
 import Network.Wai.Handler.Warp
 import Network.HTTP.Types
 import Text.Blaze.Html
-import Text.Blaze.Html5 as H
-import Text.Blaze.Html.Renderer.Utf8 (renderHtml)
-import Data.Aeson (FromJSON, decode)
+import qualified Text.Blaze.Html5 as H
 import GHC.Generics (Generic)
-import Data.ByteString.Lazy as BSL
-import qualified Data.ByteString.Char8 as B
+import qualified Data.ByteString.Lazy as BSL
 import Network.HTTP.Client.TLS
-import Network.HTTP.Client
-import Network.URI as N
-import OpenID.Connect.Client.Provider as O
-import OpenID.Connect.Client.Flow.AuthorizationCode
-import Data.String (IsString(fromString))
-import Data.Maybe (fromJust)
-import Web.Cookie
+import Data.Aeson
+
+import KBG.Auth
 
 layout :: Markup -> Markup
-layout body = html $ do
+layout body = H.html $ do
     H.head $ do
-        title (text "My website!")
+        H.title (text "My website!")
     H.body body -- add nav bar
 
 page :: Markup
 page = layout $ do
-    h1 (text "Hello world!")
-    form $ H.span $ toHtml ("foo" :: String)
+    H.h1 (text "Hello world!")
+    H.form $ H.span $ toHtml ("foo" :: String)
 
 data Bettee = Bettee
     { name :: String
@@ -47,55 +40,17 @@ data Bet = Bet
 main :: IO ()
 main = do
     let host = "0.0.0.0"
-    let port = 8080
+    let port = 3000
     let settings = setPort port $ setHost host defaultSettings
     putStrLn $ "listening on " ++ show host ++ ":" ++ show port
     contents <- (decode <$> BSL.readFile "./data.json") :: IO (Maybe [Bet])
     -- print contents
     manager <- newTlsManager
-    runSettings settings (app manager)
+    disc <- discovery manager
+    runSettings settings (requireSession manager disc app)
 
-app :: Manager -> Application
-app manager req res = do
-    let headers = W.requestHeaders req
-    eitherDisc <- O.discovery (`httpLbs` manager) (N.URI "https:" (Just $ N.URIAuth "" "koala.dev.svsticky.nl" "") "" "" "")
-    let ar = defaultAuthenticationRequest "openid member-read email profile" (Credentials "e1aacf592e92eedf71dea19f8c40b5ea5d51ebe3e30b29b843cfc05cb91aadd6" (AssignedSecretText "86b191438b892b9cac2e8d3e4db5f96a711628c49704366e78d3ebde98c28380b") (N.URI "" Nothing "login" "" "" `N.relativeTo` N.URI "http:" (Just $ N.URIAuth "" "0.0.0.0" ":8080") "" "" ""))
-    case eitherDisc of
-        Left err -> error $ show err
-        Right (discov,time') -> do
-            case lookup "Cookie" headers of
-                Just c -> case rawPathInfo req of
-                    "/" -> res $ responseLBS status200 [("Content-Type", "text/html")] (renderHtml page)
-                    "/login" -> do
-                        let qry = W.queryString req
-                        let code = case lookup "code" qry of
-                                Just (Just s) -> s
-                                _ -> error "no code found"
-                        let state = case lookup "state" qry of
-                                Just (Just s) -> s
-                                _ -> error "no state found"
-                        kys' <- keysFromDiscovery (`httpLbs` manager) discov
-                        let kys = case kys' of
-                                Left err -> error $ show err
-                                Right k -> fst k
-                        let val = case lookup "oauth" $ parseCookies c of
-                                Just v -> v
-                                Nothing -> error "no cookie set"
-                        authResult <- authenticationSuccess (`httpLbs` manager) (fromJust time') (Provider discov kys) (Credentials "e1aacf592e92eedf71dea19f8c40b5ea5d51ebe3e30b29b843cfc05cb91aadd6" (AssignedSecretText "86b191438b892b9cac2e8d3e4db5f96a711628c49704366e78d3ebde98c28380b") (N.URI "http:" (Just $ N.URIAuth "" "0.0.0.0" ":8080") "" "" "")) (UserReturnFromRedirect val code state)
-                        case authResult of
-                            Left err -> error $ show err
-                            Right claims -> error "works"
-                    _ -> res notFoundRoute
-                Nothing -> case rawPathInfo req of
-                    "/" -> do
-                        eitherRedirect <- authenticationRedirect discov ar
-                        case eitherRedirect of
-                            Left err -> error $ show err
-                            Right (RedirectTo uri f) -> do
-                                let cookie = f "oauth"
-                                res $ responseLBS status302 [("Location",fromString $ show uri), ("Set-Cookie", setCookieName cookie <> "=" <> setCookieValue cookie <> "; SameSite=None")] empty
-                    _ -> res notFoundRoute
-
+app :: Application
+app req res = res $ responseLBS status200 [] "hello"
 
 notFoundRoute :: W.Response
 notFoundRoute =

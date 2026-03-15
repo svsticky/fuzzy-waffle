@@ -67,7 +67,7 @@ executable kbg
     -- other-extensions:
 
     -- Other library packages from which modules are imported.
-    build-depends:    base, wai, wai-extra, warp, http-types, blaze-html, aeson, bytestring, http-client-tls, http-client, network-uri, openid-connect, cookie
+    build-depends:    base, wai, wai-extra, warp, http-types, blaze-html, aeson, bytestring, http-client-tls, http-client, network-uri, cookie, random, text
     ghc-options:      -threaded -rtsopts -with-rtsopts=-N
 
     -- Directories containing source files.
@@ -75,3 +75,5 @@ executable kbg
 
     -- Base language which the package is written in.
     default-language: Haskell2010
+
+    other-modules: KBG.Auth
