@@ -1,13 +1,14 @@
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE BlockArguments #-}
 
 module KBG.Auth (requireSession, discovery, Discovery) where
 
 import Network.Wai
 import Network.HTTP.Client (responseBody, Manager, httpLbs, parseRequest, applyBasicAuth, urlEncodedBody)
 import Network.HTTP.Types
-import Data.Maybe (fromJust, isNothing, maybeToList)
+import Data.Maybe (fromJust, isNothing, isJust, maybeToList)
 
 import Data.ByteString (StrictByteString, breakSubstring)
 import qualified Data.ByteString as BSS
@@ -48,6 +49,12 @@ parseCookies = map parseCookie . tokenise "; "
 checkSessionCookie :: Request -> Maybe StrictByteString
 checkSessionCookie = lookup "Cookie" . requestHeaders >=> lookup "session" . parseCookies
 
+verifyStateCookie :: Request -> Bool
+verifyStateCookie req = isJust do
+    stateParam <- join $ "state" `lookup` queryString req
+    stateCookie <- lookup "Cookie" (requestHeaders req) >>= lookup "state" . parseCookies
+    if stateCookie == stateParam then Just () else Nothing
+
 data AccessTokenResponse = AccessTokenResponse
     { access_token :: StrictByteString
     , expires_in :: Int
@@ -77,19 +84,19 @@ destroySessionHeader req = (\session -> ("Set-Cookie", "session=" <> session <> 
 requireSession :: Manager -> Discovery -> Middleware
 requireSession man disc app req res
     | pathInfo req == ["logout"] = res $ responseLBS status200 ([("Location", "/")] <> maybeToList (destroySessionHeader req)) ""
-    | pathInfo req == ["callback"] = case join $ "code" `lookup` queryString req of
+    | pathInfo req == ["callback"] && verifyStateCookie req = case join $ "code" `lookup` queryString req of
         Just code -> requestAuthToken man disc code >>= \case
             Just atr -> app req (res . mapResponseHeaders (addSessionHeader atr.access_token))
             Nothing -> res $ responseLBS status500 [] "Could not parse access token response from koala"
         Nothing -> res $ responseLBS status500 [] "Invalid parameters to oauth callback url"
+    | pathInfo req == ["callback"] = res $ responseLBS status403 [] "Invalid state parameter"
     | isNothing (checkSessionCookie req) = do
         state <- C8.pack <$> replicateM 10 (getStdRandom (randomR ('a', 'z')))
-        -- TODO: Put state in IORef and check in callback
         let redirectUrl = disc.authorization_endpoint
                 <> "?response_type=code"
                 <> "&client_id=e1aacf592e92eedf71dea19f8c40b5ea5d51ebe3e30b29b843cfc05cb91aadd6"
                 <> "&redirect_uri=http://localhost:3000/callback"
                 <> "&scope=openid%20member-read%20email%20profile"
                 <> "&state=" <> state
-        res $ responseLBS status302 [("Location", redirectUrl)] ""
+        res $ responseLBS status302 [("Location", redirectUrl), ("Set-Cookie", "state=" <> state <> "; HttpOnly")] ""
     | otherwise = app req res
