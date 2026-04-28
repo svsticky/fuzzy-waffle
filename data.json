@@ -3,12 +3,12 @@
         "better": "u1",
         "bettees": [
             {
-                "name": "Job Vonk",
+                "name": "Piet Paulusma",
                 "function": "Chair"
             },
             {
-                "name": "Silas Peters",
-                "function": "Feut"
+                "name": "Jan Janssen",
+                "function": "External Affairs"
             }
         ]
     },
@@ -16,8 +16,8 @@
         "better": "u2",
         "bettees": [
             {
-                "name": "Koen de Ruijter",
-                "function": "Commissaris IT"
+                "name": "Sinterklaas",
+                "function": "Secretary"
             }
         ]
     }
