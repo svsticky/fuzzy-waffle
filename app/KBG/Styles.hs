@@ -1,0 +1,121 @@
+{-# LANGUAGE OverloadedStrings #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# HLINT ignore "Use catMaybes" #-}
+
+module KBG.Styles (layout) where
+
+import Text.Blaze.Html
+import qualified Text.Blaze.Html5 as H
+import Data.Text (Text)
+import qualified Data.Text as T
+import Text.Blaze.Html5.Attributes as HA
+
+styles :: Text
+styles = T.unlines
+    [ "@import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@400;500&display=swap');"
+    , ":root {"
+    , "  --bg:          #0f0d0c;"
+    , "  --surface:     #1c1916;"
+    , "  --border:      #2e2a26;"
+    , "  --accent:      #c9622f;"
+    , "  --accent-dim:  #8c3e1a;"
+    , "  --text:        #ede8e3;"
+    , "  --muted:       #7a7068;"
+    , "  --radius:      6px;"
+    , "}"
+    , "*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }"
+    , "body {"
+    , "  background: var(--bg);"
+    , "  color: var(--text);"
+    , "  font-family: 'DM Sans', sans-serif;"
+    , "  min-height: 100vh;"
+    , "  display: flex;"
+    , "  align-items: center;"
+    , "  justify-content: center;"
+    , "  padding: 2rem;"
+    , "}"
+    , ".card {"
+    , "  background: var(--surface);"
+    , "  border: 1px solid var(--border);"
+    , "  border-radius: calc(var(--radius) * 2);"
+    , "  padding: 2.5rem 3rem;"
+    , "  width: 100%;"
+    , "  max-width: 480px;"
+    , "}"
+    , "h1 {"
+    , "  font-family: 'DM Serif Display', serif;"
+    , "  font-size: 1.75rem;"
+    , "  font-weight: 400;"
+    , "  color: var(--text);"
+    , "  margin-bottom: 0.25rem;"
+    , "}"
+    , ".subtitle {"
+    , "  color: var(--muted);"
+    , "  font-size: 0.875rem;"
+    , "  margin-bottom: 2rem;"
+    , "}"
+    , ".field {"
+    , "  display: flex;"
+    , "  flex-direction: column;"
+    , "  gap: 0.375rem;"
+    , "  margin-bottom: 1.125rem;"
+    , "}"
+    , "label {"
+    , "  font-size: 0.8125rem;"
+    , "  font-weight: 500;"
+    , "  color: var(--muted);"
+    , "  text-transform: uppercase;"
+    , "  letter-spacing: 0.06em;"
+    , "}"
+    , "input[type=text] {"
+    , "  background: var(--bg);"
+    , "  border: 1px solid var(--border);"
+    , "  border-radius: var(--radius);"
+    , "  padding: 0.5rem 0.75rem;"
+    , "  color: var(--text);"
+    , "  font-family: 'DM Sans', sans-serif;"
+    , "  font-size: 0.9375rem;"
+    , "  width: 100%;"
+    , "  outline: none;"
+    , "  transition: border-color 0.15s ease, box-shadow 0.15s ease;"
+    , "}"
+    , "input[type=text]:focus {"
+    , "  border-color: var(--accent);"
+    , "  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent);"
+    , "}"
+    , "input[type=text].error {"
+    , "  border-color: #c0392b;"
+    , "}"
+    , ".error-msg {"
+    , "  color: #e74c3c;"
+    , "  font-size: 0.78rem;"
+    , "  min-height: 1em;"
+    , "}"
+    , "input[type=submit] {"
+    , "  margin-top: 1rem;"
+    , "  width: 100%;"
+    , "  background: var(--accent);"
+    , "  color: #fff;"
+    , "  border: none;"
+    , "  border-radius: var(--radius);"
+    , "  padding: 0.65rem 1rem;"
+    , "  font-family: 'DM Sans', sans-serif;"
+    , "  font-size: 0.9375rem;"
+    , "  font-weight: 500;"
+    , "  cursor: pointer;"
+    , "  transition: background 0.15s ease;"
+    , "}"
+    , "input[type=submit]:hover { background: var(--accent-dim); }"
+    ]
+
+layout :: Markup -> Markup
+layout body = H.html $ do
+    H.head $ do
+        H.meta ! HA.charset "utf-8"
+        H.meta ! HA.name "viewport" ! HA.content "width=device-width, initial-scale=1"
+        H.title "KandidaatsBestuurGokken"
+        H.style $ H.toHtml styles
+    H.body $
+        H.div ! HA.class_ "card" $ do
+            H.h1 "KandidaatsBestuurGokken"
+            body

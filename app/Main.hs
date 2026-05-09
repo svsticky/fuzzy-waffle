@@ -26,43 +26,37 @@ import Text.Blaze.Html.Renderer.Utf8
 import qualified Data.ByteString.Char8 as C8
 
 import KBG.Auth ( discovery, requireSession, loadEnvCredentials, EnvCredentials(..) )
+import KBG.Styles ( layout )
 
 -- | (field id/name, label text, placeholder)
 formFields :: [(Text, Text, Text)]
 formFields =
-    [ ("ond",   "Onderwijs",     "Jari van Polen")
-    , ("int",   "Intern",        "Rens van Moorsel")
-    , ("sec",   "Secretaris",    "Bram de Haas")
-    , ("voo",   "Voorzitter",    "Iris van der Zwart")
-    , ("pen",   "Penningmeester","Chion Craane")
-    , ("ext",   "Extern",        "Isabelle Wittebols")
+    [ ("voo",   "Voorzitter",     "Iris van der Zwart")
+    , ("sec",   "Secretaris",     "Bram de Haas")
+    , ("pen",   "Penningmeester", "Chion Craane")
+    , ("int",   "Intern",         "Rens van Moorsel")
+    , ("ext",   "Extern",         "Isabelle Wittebols")
+    , ("ond",   "Onderwijs",      "Jari van Polen")
     ]
 
-layout :: Markup -> Markup
-layout body = H.html $ do
-    H.head $ do
-        H.title "KandidaatsBestuurGokken"
-        H.style $ H.toHtml ("input.error { border: 2px solid red; } \
-                             \.error-msg { color: red; font-size: 0.85em; }" :: Text)
-    H.body body
-
 page :: Markup
-page = layout $ do
+page = layout $
     H.form ! HA.action "/" ! HA.method "post" ! HA.id "mainForm" $ do
         mapM_ renderField formFields
         H.input ! HA.type_ "submit" ! HA.value "Submit"
-    validationScript
+        validationScript
 
 renderField :: (Text, Text, Text) -> Markup
-renderField (fieldId, label, placeholder) = do
-    H.label ! HA.for (textValue fieldId) $ H.toHtml (label <> ": ")
-    H.input ! HA.type_ "text"
-            ! HA.id    (textValue fieldId)
-            ! HA.name  (textValue fieldId)
-            ! HA.placeholder (textValue placeholder)
-    H.span  ! HA.id (textValue (fieldId <> "-error"))
-            ! HA.class_ "error-msg" $ ""
-    H.br
+renderField (fieldId, label_, placeholder_) =
+    H.div ! HA.class_ "field" $ do
+        H.label ! HA.for (textValue fieldId) $ H.toHtml label_
+        H.input ! HA.type_ "text"
+                ! HA.id    (textValue fieldId)
+                ! HA.name  (textValue fieldId)
+                ! HA.placeholder (textValue placeholder_)
+                ! HA.autocomplete "off"
+        H.span  ! HA.id (textValue (fieldId <> "-error"))
+                ! HA.class_ "error-msg" $ ""
 
 validationScript :: Markup
 validationScript = H.script $ H.toHtml $ T.unlines
@@ -103,8 +97,7 @@ main = do
     envCreds <- loadEnvCredentials
     let settings = setPort envCreds.port defaultSettings
     putStrLn $ "listening on " ++ C8.unpack envCreds.baseURL
-    contents <- (decode <$> BSL.readFile "./data.json") :: IO (Maybe [Bet])
-    print contents
+    storedData <- (decode <$> BSL.readFile "./data.json") :: IO (Maybe [Bet])
     manager <- newTlsManager
     disc <- discovery manager
     runSettings settings (requireSession manager disc app)
@@ -120,11 +113,11 @@ app req res = case requestMethod req of
     _ -> res $ responseLBS status405 [("Content-Type", "text/plain")] "Method not allowed"
 
 htmlResponse :: Status -> BSL.ByteString -> W.Response
-htmlResponse status = responseLBS status [("Content-Type", "text/html")]
+htmlResponse status = responseLBS status [("Content-Type", "text/html; charset=utf-8")]
 
 lookupParam :: Text -> [(BS.ByteString, BS.ByteString)] -> Maybe Text
-lookupParam key params = decodeUtf8 <$> lookup (encodeUtf8 key) params
-  where encodeUtf8 = Data.Text.Encoding.encodeUtf8
+lookupParam key params = decodeUtf8 <$> lookup (encodeUtf8_ key) params
+  where encodeUtf8_ = Data.Text.Encoding.encodeUtf8
 
 notFoundRoute :: W.Response
 notFoundRoute = responseLBS status404 [("Content-Type", "text/html")]
