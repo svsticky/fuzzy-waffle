@@ -67,7 +67,9 @@ executable kbg
     -- other-extensions:
 
     -- Other library packages from which modules are imported.
-    build-depends:    base, wai, wai-extra, warp, http-types, blaze-html, aeson, bytestring, http-client-tls, http-client, network-uri, cookie, random, text
+    build-depends:    base, wai, wai-extra, wai-middleware-static, warp, http-types,
+                      blaze-html, aeson, bytestring, http-client-tls, http-client, 
+                      network-uri, cookie, random, text, dotenv
     ghc-options:      -threaded -rtsopts -with-rtsopts=-N
 
     -- Directories containing source files.

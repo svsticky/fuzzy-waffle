@@ -3,6 +3,7 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# HLINT ignore "Use catMaybes" #-}
+{-# LANGUAGE OverloadedRecordDot #-}
 
 module Main where
 
@@ -22,8 +23,9 @@ import Network.HTTP.Client.TLS
 import Data.Aeson
 import Text.Blaze.Html5.Attributes as HA
 import Text.Blaze.Html.Renderer.Utf8
+import qualified Data.ByteString.Char8 as C8
 
-import KBG.Auth
+import KBG.Auth ( discovery, requireSession, loadEnvCredentials, EnvCredentials(..) )
 
 -- | (field id/name, label text, placeholder)
 formFields :: [(Text, Text, Text)]
@@ -98,10 +100,9 @@ data Bet = Bet
 
 main :: IO ()
 main = do
-    let host_ = "0.0.0.0"
-    let port_ = 3000
-    let settings = setPort port_ $ setHost host_ defaultSettings
-    putStrLn $ "listening on " ++ show host_ ++ ":" ++ show port_
+    envCreds <- loadEnvCredentials
+    let settings = setPort envCreds.port defaultSettings
+    putStrLn $ "listening on " ++ C8.unpack envCreds.baseURL
     contents <- (decode <$> BSL.readFile "./data.json") :: IO (Maybe [Bet])
     print contents
     manager <- newTlsManager

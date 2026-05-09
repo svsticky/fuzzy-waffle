@@ -3,7 +3,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE BlockArguments #-}
 
-module KBG.Auth (requireSession, discovery, Discovery) where
+module KBG.Auth (requireSession, discovery, Discovery, EnvCredentials(..), loadEnvCredentials) where
 
 import Network.Wai
 import Network.HTTP.Client (responseBody, Manager, httpLbs, parseRequest, applyBasicAuth, urlEncodedBody)
@@ -18,6 +18,8 @@ import Data.Aeson.Types (typeMismatch)
 import Data.Aeson
 import Control.Monad
 import System.Random
+import System.Environment (lookupEnv)
+import Configuration.Dotenv (loadFile, defaultConfig, configPath)
 
 data Discovery = Discovery
     { authorization_endpoint :: StrictByteString
@@ -29,6 +31,26 @@ instance FromJSON Discovery where
         <$> o .: "authorization_endpoint"
         <*> o .: "token_endpoint"
     parseJSON invalid = typeMismatch "Object" invalid
+
+data EnvCredentials = EnvCredentials
+    { clientId     :: StrictByteString
+    , clientSecret :: StrictByteString
+    , host         :: String
+    , port         :: Int
+    , baseURL      :: StrictByteString
+    }
+
+loadEnvCredentials :: IO EnvCredentials
+loadEnvCredentials = do
+    loadFile defaultConfig { configPath = [".env"] }
+    clientId_     <- lookupEnv "OAUTH_CLIENT_ID"
+    clientSecret_ <- lookupEnv "OAUTH_CLIENT_SECRET"
+    host_         <- lookupEnv "HOST"
+    port_         <- lookupEnv "PORT"
+    case (clientId_, clientSecret_, host_, port_) of
+        (Just cid, Just sec, Just hst, Just prt) -> return $ 
+            EnvCredentials (C8.pack cid) (C8.pack sec) hst (read prt) (C8.pack hst <> ":" <> C8.pack prt)
+        _                                         -> fail "Incomplete .env file"
 
 discovery :: Manager -> IO Discovery
 discovery man = do
@@ -68,10 +90,10 @@ instance FromJSON AccessTokenResponse where
         <*> o .: "credentials_id"
     parseJSON invalid = typeMismatch "Object" invalid
 
-requestAuthToken :: Manager -> Discovery -> StrictByteString -> IO (Maybe AccessTokenResponse)
-requestAuthToken man disc code = do 
-    req <-  urlEncodedBody [("grant_type", "authorization_code"), ("code", code), ("redirect_uri", "http://localhost:3000/callback")]
-          . applyBasicAuth "e1aacf592e92eedf71dea19f8c40b5ea5d51ebe3e30b29b843cfc05cb91aadd6" "86b191438b892b9cac2e8d3e4db5f96a711628c49704366e78d3ebde98c28380b"
+requestAuthToken :: Manager -> Discovery -> EnvCredentials -> StrictByteString -> IO (Maybe AccessTokenResponse)
+requestAuthToken man disc creds code = do
+    req <-  urlEncodedBody [("grant_type", "authorization_code"), ("code", code), ("redirect_uri", creds.baseURL <> "/callback")]
+          . applyBasicAuth creds.clientId creds.clientSecret
         <$> parseRequest (C8.unpack disc.token_endpoint)
     decode . responseBody <$> httpLbs req man
 
@@ -82,21 +104,25 @@ destroySessionHeader :: Request -> Maybe Header
 destroySessionHeader req = (\session -> ("Set-Cookie", "session=" <> session <> "; HttpOnly; Max-Age=-1")) <$> checkSessionCookie req
 
 requireSession :: Manager -> Discovery -> Middleware
-requireSession man disc app req res
-    | pathInfo req == ["logout"] = res $ responseLBS status200 ([("Location", "/")] <> maybeToList (destroySessionHeader req)) ""
-    | pathInfo req == ["callback"] && verifyStateCookie req = case join $ "code" `lookup` queryString req of
-        Just code -> requestAuthToken man disc code >>= \case
-            Just atr -> app req (res . mapResponseHeaders (addSessionHeader atr.access_token))
-            Nothing -> res $ responseLBS status500 [] "Could not parse access token response from koala"
-        Nothing -> res $ responseLBS status500 [] "Invalid parameters to oauth callback url"
-    | pathInfo req == ["callback"] = res $ responseLBS status403 [] "Invalid state parameter"
-    | isNothing (checkSessionCookie req) = do
-        state <- C8.pack <$> replicateM 10 (getStdRandom (randomR ('a', 'z')))
-        let redirectUrl = disc.authorization_endpoint
-                <> "?response_type=code"
-                <> "&client_id=e1aacf592e92eedf71dea19f8c40b5ea5d51ebe3e30b29b843cfc05cb91aadd6"
-                <> "&redirect_uri=http://localhost:3000/callback"
-                <> "&scope=openid%20member-read%20email%20profile"
-                <> "&state=" <> state
-        res $ responseLBS status302 [("Location", redirectUrl), ("Set-Cookie", "state=" <> state <> "; HttpOnly")] ""
-    | otherwise = app req res
+requireSession man disc app req res = do
+    creds <- loadEnvCredentials
+    go creds
+  where
+    go creds
+        | pathInfo req == ["logout"] = res $ responseLBS status200 ([("Location", "/")] <> maybeToList (destroySessionHeader req)) ""
+        | pathInfo req == ["callback"] && verifyStateCookie req = case join $ "code" `lookup` queryString req of
+            Just code -> requestAuthToken man disc creds code >>= \case
+                Just atr -> app req (res . mapResponseHeaders (addSessionHeader atr.access_token))
+                Nothing -> res $ responseLBS status500 [] "Could not parse access token response from koala"
+            Nothing -> res $ responseLBS status500 [] "Invalid parameters to oauth callback url"
+        | pathInfo req == ["callback"] = res $ responseLBS status403 [] "Invalid state parameter"
+        | isNothing (checkSessionCookie req) = do
+            state <- C8.pack <$> replicateM 10 (getStdRandom (randomR ('a', 'z')))
+            let redirectUrl = disc.authorization_endpoint
+                    <> "?response_type=code"
+                    <> "&client_id=" <> creds.clientId
+                    <> "&redirect_uri=" <> creds.baseURL <> "/callback"
+                    <> "&scope=openid%20member-read%20email%20profile"
+                    <> "&state=" <> state
+            res $ responseLBS status302 [("Location", redirectUrl), ("Set-Cookie", "state=" <> state <> "; HttpOnly")] ""
+        | otherwise = app req res
