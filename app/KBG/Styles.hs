@@ -4,14 +4,13 @@
 
 module KBG.Styles (layout, formFields, mainPage, renderField, notFoundPage) where
 
-import Network.Wai as W
-import Network.HTTP.Types
 import Text.Blaze.Html
 import qualified Text.Blaze.Html5 as H
 import Data.Text (Text)
 import qualified Data.Text as T
 import Text.Blaze.Html5.Attributes as HA
-
+import Data.List (lookup)
+import Prelude hiding (lookup)
 
 formFields :: [(Text, Text, Text)]
 formFields =
@@ -23,11 +22,14 @@ formFields =
     , ("ond",   "Onderwijs",      "Jari van Polen")
     ]
 
-mainPage :: Markup
-mainPage = layout $
+mainPage :: [(String, String)] -> Maybe String -> Markup
+mainPage prefilled banner = layout $ do
+    case banner of
+        Nothing  -> mempty
+        Just msg -> H.div ! HA.class_ "banner" $ H.toHtml msg
     H.form ! HA.action "/" ! HA.method "post" ! HA.id "mainForm" $ do
-        mapM_ renderField formFields
-        H.input ! HA.type_ "submit" ! HA.value "Submit"
+        mapM_ (renderField prefilled) formFields
+        H.input ! HA.type_ "submit" ! HA.value "Opslaan"
         validationScript
 
 notFoundPage :: Markup
@@ -35,15 +37,17 @@ notFoundPage = layout $ do
     H.h1 "404 - Not Found"
     H.p "Have you tried turning it off and on again?"
 
-renderField :: (Text, Text, Text) -> Markup
-renderField (fieldId, label_, placeholder_) =
+renderField :: [(String, String)] -> (Text, Text, Text) -> Markup
+renderField prefilled (fieldId, label_, placeholder_) =
     H.div ! HA.class_ "field" $ do
         H.label ! HA.for (textValue fieldId) $ H.toHtml label_
+        let val = maybe "" T.pack (Data.List.lookup (T.unpack fieldId) prefilled)
         H.input ! HA.type_ "text"
                 ! HA.id    (textValue fieldId)
                 ! HA.name  (textValue fieldId)
                 ! HA.placeholder (textValue placeholder_)
                 ! HA.autocomplete "off"
+                ! HA.value (textValue val)
         H.span  ! HA.id (textValue (fieldId <> "-error"))
                 ! HA.class_ "error-msg" $ ""
 
@@ -70,7 +74,6 @@ validationScript = H.script $ H.toHtml $ T.unlines
     ]
   where
     fieldList = "['" <> T.intercalate "','" (map (\(f,_,_) -> f) formFields) <> "']"
-
 
 layout :: Markup -> Markup
 layout body = H.html $ do
@@ -121,12 +124,16 @@ styles = T.unlines
     , "  font-size: 1.75rem;"
     , "  font-weight: 400;"
     , "  color: var(--text);"
-    , "  margin-bottom: 0.25rem;"
+    , "  margin-bottom: 1.25rem;"
     , "}"
-    , ".subtitle {"
-    , "  color: var(--muted);"
+    , ".banner {"
+    , "  background: color-mix(in srgb, var(--accent) 15%, transparent);"
+    , "  border: 1px solid var(--accent-dim);"
+    , "  border-radius: var(--radius);"
+    , "  color: var(--text);"
     , "  font-size: 0.875rem;"
-    , "  margin-bottom: 2rem;"
+    , "  padding: 0.625rem 0.875rem;"
+    , "  margin-bottom: 1.5rem;"
     , "}"
     , ".field {"
     , "  display: flex;"

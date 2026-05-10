@@ -89,4 +89,4 @@ executable kbg
     -- Base language which the package is written in.
     default-language: Haskell2010
 
-    other-modules: KBG.Auth, KBG.Styles, KBG.DB
+    other-modules: KBG.Auth, KBG.Styles, KBG.DB, KBG.Config

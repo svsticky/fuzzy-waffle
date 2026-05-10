@@ -21,6 +21,8 @@ import System.Random
 import System.Environment (lookupEnv)
 import Configuration.Dotenv (loadFile, defaultConfig, configPath)
 
+import KBG.Config (EnvCredentials(..), loadEnvCredentials)
+
 data Discovery = Discovery
     { authorization_endpoint :: StrictByteString
     , token_endpoint :: StrictByteString
@@ -32,31 +34,9 @@ instance FromJSON Discovery where
         <*> o .: "token_endpoint"
     parseJSON invalid = typeMismatch "Object" invalid
 
-data EnvCredentials = EnvCredentials
-    { clientId     :: StrictByteString
-    , clientSecret :: StrictByteString
-    , host         :: String
-    , port         :: Int
-    , baseURL      :: StrictByteString
-    , databaseURL  :: String
-    }
-
-loadEnvCredentials :: IO EnvCredentials
-loadEnvCredentials = do
-    loadFile defaultConfig { configPath = [".env"] }
-    clientId_     <- lookupEnv "OAUTH_CLIENT_ID"
-    clientSecret_ <- lookupEnv "OAUTH_CLIENT_SECRET"
-    host_         <- lookupEnv "HOST"
-    port_         <- lookupEnv "PORT"
-    databaseURL_  <- lookupEnv "DATABASE_URL"
-    case (clientId_, clientSecret_, host_, port_, databaseURL_) of
-        (Just cid, Just sec, Just hst, Just prt, Just dbURL) -> return $ 
-            EnvCredentials (C8.pack cid) (C8.pack sec) hst (read prt) (C8.pack hst <> ":" <> C8.pack prt) dbURL
-        _                                         -> fail "Incomplete .env file"
-
-discovery :: Manager -> IO Discovery
-discovery man = do
-    req <- parseRequest "https://koala.dev.svsticky.nl/.well-known/openid-configuration"
+discovery :: Manager -> EnvCredentials -> IO Discovery
+discovery man envCreds = do
+    req <- parseRequest envCreds.oAuthReq
     fromJust . decode . responseBody <$> httpLbs req man
 
 tokenise :: StrictByteString -> StrictByteString -> [StrictByteString]
@@ -65,7 +45,9 @@ tokenise x y =
      in h : if BSS.null t then [] else tokenise x (BSS.drop (BSS.length x) t)
 
 parseCookie :: StrictByteString -> (StrictByteString, StrictByteString)
-parseCookie cookieString = let [key, val] = tokenise "=" cookieString in (key, val)
+parseCookie s = case tokenise "=" s of
+    (k:rest) -> (k, BSS.intercalate "=" rest)
+    []       -> (s, "")
 
 parseCookies :: StrictByteString -> [(StrictByteString, StrictByteString)]
 parseCookies = map parseCookie . tokenise "; "
@@ -105,16 +87,15 @@ addSessionHeader atr = (("Set-Cookie", "session=" <> C8.pack (show atr.credentia
 destroySessionHeader :: Request -> Maybe Header
 destroySessionHeader req = (\session -> ("Set-Cookie", "session=" <> session <> "; HttpOnly; Max-Age=-1")) <$> checkSessionCookie req
 
-requireSession :: Manager -> Discovery -> Middleware
-requireSession man disc app req res = do
-    creds <- loadEnvCredentials
+requireSession :: Manager -> Discovery -> EnvCredentials -> Middleware
+requireSession man disc creds app req res = do
     go creds
   where
     go creds
         | pathInfo req == ["logout"] = res $ responseLBS status200 ([("Location", "/")] <> maybeToList (destroySessionHeader req)) ""
         | pathInfo req == ["callback"] && verifyStateCookie req = case join $ "code" `lookup` queryString req of
             Just code -> requestAuthToken man disc creds code >>= \case
-                Just atr -> app req (res . mapResponseHeaders (addSessionHeader atr))
+                Just atr -> res $ responseLBS status302 (addSessionHeader atr [("Location", "/")]) ""
                 Nothing -> res $ responseLBS status500 [] "Could not parse access token response from koala"
             Nothing -> res $ responseLBS status500 [] "Invalid parameters to oauth callback url"
         | pathInfo req == ["callback"] = res $ responseLBS status403 [] "Invalid state parameter"
