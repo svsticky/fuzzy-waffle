@@ -73,8 +73,10 @@ executable kbg
                       bytestring,
                       dotenv,
                       http-client, http-client-tls, http-types,
+                      postgresql-simple,
                       random,
                       text,
+                      time,
                       wai, wai-extra, warp
     -- Removed dependencies:
     -- wai-middleware-static, network-uri, cookie
@@ -87,4 +89,4 @@ executable kbg
     -- Base language which the package is written in.
     default-language: Haskell2010
 
-    other-modules: KBG.Auth, KBG.Styles
+    other-modules: KBG.Auth, KBG.Styles, KBG.DB

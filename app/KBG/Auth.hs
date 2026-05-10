@@ -3,7 +3,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE BlockArguments #-}
 
-module KBG.Auth (requireSession, discovery, Discovery, EnvCredentials(..), loadEnvCredentials) where
+module KBG.Auth (requireSession, discovery, Discovery, EnvCredentials(..), loadEnvCredentials, parseCookies) where
 
 import Network.Wai
 import Network.HTTP.Client (responseBody, Manager, httpLbs, parseRequest, applyBasicAuth, urlEncodedBody)
@@ -38,6 +38,7 @@ data EnvCredentials = EnvCredentials
     , host         :: String
     , port         :: Int
     , baseURL      :: StrictByteString
+    , databaseURL  :: String
     }
 
 loadEnvCredentials :: IO EnvCredentials
@@ -47,9 +48,10 @@ loadEnvCredentials = do
     clientSecret_ <- lookupEnv "OAUTH_CLIENT_SECRET"
     host_         <- lookupEnv "HOST"
     port_         <- lookupEnv "PORT"
-    case (clientId_, clientSecret_, host_, port_) of
-        (Just cid, Just sec, Just hst, Just prt) -> return $ 
-            EnvCredentials (C8.pack cid) (C8.pack sec) hst (read prt) (C8.pack hst <> ":" <> C8.pack prt)
+    databaseURL_  <- lookupEnv "DATABASE_URL"
+    case (clientId_, clientSecret_, host_, port_, databaseURL_) of
+        (Just cid, Just sec, Just hst, Just prt, Just dbURL) -> return $ 
+            EnvCredentials (C8.pack cid) (C8.pack sec) hst (read prt) (C8.pack hst <> ":" <> C8.pack prt) dbURL
         _                                         -> fail "Incomplete .env file"
 
 discovery :: Manager -> IO Discovery
@@ -97,8 +99,8 @@ requestAuthToken man disc creds code = do
         <$> parseRequest (C8.unpack disc.token_endpoint)
     decode . responseBody <$> httpLbs req man
 
-addSessionHeader :: StrictByteString -> ResponseHeaders -> ResponseHeaders
-addSessionHeader code = (("Set-Cookie", "session=" <> code <> "; HttpOnly") :)
+addSessionHeader :: AccessTokenResponse -> ResponseHeaders -> ResponseHeaders
+addSessionHeader atr = (("Set-Cookie", "session=" <> C8.pack (show atr.credentials_id) <> "; HttpOnly") :)
 
 destroySessionHeader :: Request -> Maybe Header
 destroySessionHeader req = (\session -> ("Set-Cookie", "session=" <> session <> "; HttpOnly; Max-Age=-1")) <$> checkSessionCookie req
@@ -112,7 +114,7 @@ requireSession man disc app req res = do
         | pathInfo req == ["logout"] = res $ responseLBS status200 ([("Location", "/")] <> maybeToList (destroySessionHeader req)) ""
         | pathInfo req == ["callback"] && verifyStateCookie req = case join $ "code" `lookup` queryString req of
             Just code -> requestAuthToken man disc creds code >>= \case
-                Just atr -> app req (res . mapResponseHeaders (addSessionHeader atr.access_token))
+                Just atr -> app req (res . mapResponseHeaders (addSessionHeader atr))
                 Nothing -> res $ responseLBS status500 [] "Could not parse access token response from koala"
             Nothing -> res $ responseLBS status500 [] "Invalid parameters to oauth callback url"
         | pathInfo req == ["callback"] = res $ responseLBS status403 [] "Invalid state parameter"

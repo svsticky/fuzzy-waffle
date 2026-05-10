@@ -2,13 +2,87 @@
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# HLINT ignore "Use catMaybes" #-}
 
-module KBG.Styles (layout) where
+module KBG.Styles (layout, formFields, mainPage, renderField, notFoundPage) where
 
+import Network.Wai as W
+import Network.HTTP.Types
 import Text.Blaze.Html
 import qualified Text.Blaze.Html5 as H
 import Data.Text (Text)
 import qualified Data.Text as T
 import Text.Blaze.Html5.Attributes as HA
+
+
+formFields :: [(Text, Text, Text)]
+formFields =
+    [ ("voo",   "Voorzitter",     "Iris van der Zwart")
+    , ("sec",   "Secretaris",     "Bram de Haas")
+    , ("pen",   "Penningmeester", "Chion Craane")
+    , ("int",   "Intern",         "Rens van Moorsel")
+    , ("ext",   "Extern",         "Isabelle Wittebols")
+    , ("ond",   "Onderwijs",      "Jari van Polen")
+    ]
+
+mainPage :: Markup
+mainPage = layout $
+    H.form ! HA.action "/" ! HA.method "post" ! HA.id "mainForm" $ do
+        mapM_ renderField formFields
+        H.input ! HA.type_ "submit" ! HA.value "Submit"
+        validationScript
+
+notFoundPage :: Markup
+notFoundPage = layout $ do
+    H.h1 "404 - Not Found"
+    H.p "Have you tried turning it off and on again?"
+
+renderField :: (Text, Text, Text) -> Markup
+renderField (fieldId, label_, placeholder_) =
+    H.div ! HA.class_ "field" $ do
+        H.label ! HA.for (textValue fieldId) $ H.toHtml label_
+        H.input ! HA.type_ "text"
+                ! HA.id    (textValue fieldId)
+                ! HA.name  (textValue fieldId)
+                ! HA.placeholder (textValue placeholder_)
+                ! HA.autocomplete "off"
+        H.span  ! HA.id (textValue (fieldId <> "-error"))
+                ! HA.class_ "error-msg" $ ""
+
+validationScript :: Markup
+validationScript = H.script $ H.toHtml $ T.unlines
+    [ "document.getElementById('mainForm').addEventListener('submit', function(e) {"
+    , "  var fields = " <> fieldList <> ";"
+    , "  var ok = true;"
+    , "  fields.forEach(function(id) {"
+    , "    var el = document.getElementById(id);"
+    , "    var err = document.getElementById(id + '-error');"
+    , "    if (!el.value.trim()) {"
+    , "      el.classList.add('error');"
+    , "      err.textContent = ' This field is required.';"
+    , "      ok = false;"
+    , "    }"
+    , "    el.addEventListener('input', function() {"
+    , "      el.classList.remove('error');"
+    , "      err.textContent = '';"
+    , "    }, { once: true });"
+    , "  });"
+    , "  if (!ok) e.preventDefault();"
+    , "});"
+    ]
+  where
+    fieldList = "['" <> T.intercalate "','" (map (\(f,_,_) -> f) formFields) <> "']"
+
+
+layout :: Markup -> Markup
+layout body = H.html $ do
+    H.head $ do
+        H.meta ! HA.charset "utf-8"
+        H.meta ! HA.name "viewport" ! HA.content "width=device-width, initial-scale=1"
+        H.title "KandidaatsBestuurGokken"
+        H.style $ H.toHtml styles
+    H.body $
+        H.div ! HA.class_ "card" $ do
+            H.h1 "KandidaatsBestuurGokken"
+            body
 
 styles :: Text
 styles = T.unlines
@@ -107,15 +181,3 @@ styles = T.unlines
     , "}"
     , "input[type=submit]:hover { background: var(--accent-dim); }"
     ]
-
-layout :: Markup -> Markup
-layout body = H.html $ do
-    H.head $ do
-        H.meta ! HA.charset "utf-8"
-        H.meta ! HA.name "viewport" ! HA.content "width=device-width, initial-scale=1"
-        H.title "KandidaatsBestuurGokken"
-        H.style $ H.toHtml styles
-    H.body $
-        H.div ! HA.class_ "card" $ do
-            H.h1 "KandidaatsBestuurGokken"
-            body
