@@ -20,7 +20,6 @@ import qualified Data.ByteString as BS
 import Network.HTTP.Client.TLS
 import Text.Blaze.Html.Renderer.Utf8
 import qualified Data.ByteString.Char8 as C8
-import Data.String (fromString)
 import Text.Read (readMaybe)
 import Data.Time (getCurrentTime)
 
@@ -42,9 +41,9 @@ main = do
     manager <- newTlsManager
     disc <- discovery manager envCreds
     putStrLn "[startup] OIDC discovery done"
-    putStrLn $ "[startup] Server started at " ++ C8.unpack envCreds.baseURL
+    putStrLn $ "[startup] Server started at 0.0.0.0:" ++ show envCreds.port
     let settings = setPort envCreds.port
-                 $ setHost (fromString envCreds.host)
+                 $ setHost "0.0.0.0"
                  $ setLogger logRequest
                    defaultSettings
     runSettings settings (requireSession manager disc envCreds (app envCreds))
