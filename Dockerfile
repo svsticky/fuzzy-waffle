@@ -1,4 +1,4 @@
-FROM haskell:9.6.7-slim
+FROM haskell:9.6.7-slim AS build
 
 WORKDIR /opt/kbg
 
@@ -18,6 +18,14 @@ RUN cabal build --only-dependencies -j4
 
 # Add and Install Application Code
 COPY . /opt/kbg
-RUN cabal install
+RUN cabal install --installdir=.
 
-CMD ["kbg"]
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install postgresql-common -y && \
+    /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y && \
+    apt-get update && apt-get install libpq-dev -y
+
+COPY --from=build /opt/kbg/kbg /
+
+CMD ["/kbg"]
