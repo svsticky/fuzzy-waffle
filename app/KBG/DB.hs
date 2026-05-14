@@ -18,8 +18,7 @@ import Control.Exception (bracket)
 import Data.Maybe (fromMaybe)
 
 data Submission = Submission
-    {   subId       :: Int
-    ,   subUserId   :: Int
+    {   subUserId   :: Int
     ,   subVoo      :: String
     ,   subSec      :: String
     ,   subPen      :: String
@@ -30,7 +29,7 @@ data Submission = Submission
     } deriving (Show)
 
 instance FromRow Submission where
-    fromRow = Submission <$> field <*> field <*> field <*> field
+    fromRow = Submission <$> field <*> field <*> field
                          <*> field <*> field <*> field <*> field <*> field
 
 withDb :: String -> (Connection -> IO a) -> IO a
@@ -39,8 +38,7 @@ withDb connStr = bracket (connectPostgreSQL (fromString connStr)) close
 initDb :: Connection -> IO ()
 initDb conn = void $ execute_ conn
     "CREATE TABLE IF NOT EXISTS submissions (\
-    \  id           SERIAL PRIMARY KEY,\
-    \  user_id      INTEGER NOT NULL,\
+    \  user_id      INTEGER NOT NULL PRIMARY KEY,\
     \  voo          TEXT,\
     \  sec          TEXT,\
     \  pen          TEXT,\
