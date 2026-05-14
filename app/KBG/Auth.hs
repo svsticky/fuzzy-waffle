@@ -18,8 +18,6 @@ import Data.Aeson.Types (typeMismatch)
 import Data.Aeson
 import Control.Monad
 import System.Random
-import System.Environment (lookupEnv)
-import Configuration.Dotenv (loadFile, defaultConfig, configPath)
 
 import KBG.Config (EnvCredentials(..), loadEnvCredentials)
 
@@ -74,9 +72,12 @@ instance FromJSON AccessTokenResponse where
         <*> o .: "credentials_id"
     parseJSON invalid = typeMismatch "Object" invalid
 
+redirectUri :: EnvCredentials -> C8.ByteString
+redirectUri creds = C8.pack creds.host <> "/callback"
+
 requestAuthToken :: Manager -> Discovery -> EnvCredentials -> StrictByteString -> IO (Maybe AccessTokenResponse)
 requestAuthToken man disc creds code = do
-    req <-  urlEncodedBody [("grant_type", "authorization_code"), ("code", code), ("redirect_uri", creds.baseURL <> "/callback")]
+    req <-  urlEncodedBody [("grant_type", "authorization_code"), ("code", code), ("redirect_uri", redirectUri creds)]
           . applyBasicAuth creds.clientId creds.clientSecret
         <$> parseRequest (C8.unpack disc.token_endpoint)
     decode . responseBody <$> httpLbs req man
@@ -88,24 +89,21 @@ destroySessionHeader :: Request -> Maybe Header
 destroySessionHeader req = (\session -> ("Set-Cookie", "session=" <> session <> "; HttpOnly; Max-Age=-1")) <$> checkSessionCookie req
 
 requireSession :: Manager -> Discovery -> EnvCredentials -> Middleware
-requireSession man disc creds app req res = do
-    go creds
-  where
-    go creds
-        | pathInfo req == ["logout"] = res $ responseLBS status200 ([("Location", "/")] <> maybeToList (destroySessionHeader req)) ""
-        | pathInfo req == ["callback"] && verifyStateCookie req = case join $ "code" `lookup` queryString req of
-            Just code -> requestAuthToken man disc creds code >>= \case
-                Just atr -> res $ responseLBS status302 (addSessionHeader atr [("Location", "/")]) ""
-                Nothing -> res $ responseLBS status500 [] "Could not parse access token response from koala"
-            Nothing -> res $ responseLBS status500 [] "Invalid parameters to oauth callback url"
-        | pathInfo req == ["callback"] = res $ responseLBS status403 [] "Invalid state parameter"
-        | isNothing (checkSessionCookie req) = do
-            state <- C8.pack <$> replicateM 10 (getStdRandom (randomR ('a', 'z')))
-            let redirectUrl = disc.authorization_endpoint
-                    <> "?response_type=code"
-                    <> "&client_id=" <> creds.clientId
-                    <> "&redirect_uri=" <> creds.baseURL <> "/callback"
-                    <> "&scope=openid%20member-read%20email%20profile"
-                    <> "&state=" <> state
-            res $ responseLBS status302 [("Location", redirectUrl), ("Set-Cookie", "state=" <> state <> "; HttpOnly")] ""
-        | otherwise = app req res
+requireSession man disc creds app req res
+    | pathInfo req == ["logout"] = res $ responseLBS status200 ([("Location", "/")] <> maybeToList (destroySessionHeader req)) ""
+    | pathInfo req == ["callback"] && verifyStateCookie req = case join $ "code" `lookup` queryString req of
+        Just code -> requestAuthToken man disc creds code >>= \case
+            Just atr -> res $ responseLBS status302 (addSessionHeader atr [("Location", "/")]) ""
+            Nothing -> res $ responseLBS status500 [] "Could not parse access token response from koala"
+        Nothing -> res $ responseLBS status500 [] "Invalid parameters to oauth callback url"
+    | pathInfo req == ["callback"] = res $ responseLBS status403 [] "Invalid state parameter"
+    | isNothing (checkSessionCookie req) = do
+        state <- C8.pack <$> replicateM 10 (getStdRandom (randomR ('a', 'z')))
+        let redirectUrl = disc.authorization_endpoint
+                <> "?response_type=code"
+                <> "&client_id=" <> creds.clientId
+                <> "&redirect_uri=" <> redirectUri creds
+                <> "&scope=openid%20member-read%20email%20profile"
+                <> "&state=" <> state
+        res $ responseLBS status302 [("Location", redirectUrl), ("Set-Cookie", "state=" <> state <> "; HttpOnly")] ""
+    | otherwise = app req res
