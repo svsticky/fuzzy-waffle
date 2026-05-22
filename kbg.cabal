@@ -20,7 +20,7 @@ name:               kbg
 -- PVP summary:     +-+------- breaking API changes
 --                  | | +----- non-breaking API additions
 --                  | | | +--- code changes with no API change
-version:            0.1.0.0
+version:            1.1.0.0
 
 -- A short (one-line) description of the package.
 -- synopsis:
@@ -65,6 +65,7 @@ executable kbg
                       base, 
                       blaze-html, 
                       bytestring,
+                      containers,
                       dotenv,
                       http-client, http-client-tls, http-types,
                       postgresql-simple,
@@ -83,4 +84,5 @@ executable kbg
     -- Base language which the package is written in.
     default-language: Haskell2010
 
-    other-modules: KBG.Auth, KBG.Styles, KBG.DB, KBG.Config
+    other-modules: KBG.Auth, KBG.DB, KBG.Config, KBG.Layout,
+                    KBG.Pages.NotFound, KBG.Pages.Admin, KBG.Pages.Index

@@ -3,7 +3,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE BlockArguments #-}
 
-module KBG.Auth (requireSession, discovery, Discovery, EnvCredentials(..), loadEnvCredentials, parseCookies) where
+module KBG.Auth (requireSession, discovery, Discovery, EnvCredentials(..), loadEnvCredentials, parseCookies, SessionStore) where
 
 import Network.Wai
 import Network.HTTP.Client (responseBody, Manager, httpLbs, parseRequest, applyBasicAuth, urlEncodedBody)
@@ -16,6 +16,10 @@ import qualified Data.ByteString.Char8 as C8
 
 import Data.Aeson.Types (typeMismatch)
 import Data.Aeson
+import Data.IORef
+import Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
+import qualified Network.HTTP.Client as HC
 import Control.Monad
 import System.Random
 
@@ -23,13 +27,15 @@ import KBG.Config (EnvCredentials(..), loadEnvCredentials)
 
 data Discovery = Discovery
     { authorization_endpoint :: StrictByteString
-    , token_endpoint :: StrictByteString
+    , token_endpoint         :: StrictByteString
+    , userinfo_endpoint      :: StrictByteString
     }
 
 instance FromJSON Discovery where
-    parseJSON (Object o) = (\a b -> Discovery (C8.pack a) (C8.pack b))
+    parseJSON (Object o) = (\a b c -> Discovery (C8.pack a) (C8.pack b) (C8.pack c))
         <$> o .: "authorization_endpoint"
         <*> o .: "token_endpoint"
+        <*> o .: "userinfo_endpoint"
     parseJSON invalid = typeMismatch "Object" invalid
 
 discovery :: Manager -> EnvCredentials -> IO Discovery
@@ -60,8 +66,8 @@ verifyStateCookie req = isJust do
     if stateCookie == stateParam then Just () else Nothing
 
 data AccessTokenResponse = AccessTokenResponse
-    { access_token :: StrictByteString
-    , expires_in :: Int
+    { access_token   :: StrictByteString
+    , expires_in     :: Int
     , credentials_id :: Int
     }
 
@@ -73,7 +79,7 @@ instance FromJSON AccessTokenResponse where
     parseJSON invalid = typeMismatch "Object" invalid
 
 redirectUri :: EnvCredentials -> C8.ByteString
-redirectUri creds = C8.pack creds.host <> "/callback"
+redirectUri creds = C8.pack creds.host <> ":" <> C8.pack (show creds.port) <> "/callback"
 
 requestAuthToken :: Manager -> Discovery -> EnvCredentials -> StrictByteString -> IO (Maybe AccessTokenResponse)
 requestAuthToken man disc creds code = do
@@ -82,21 +88,46 @@ requestAuthToken man disc creds code = do
         <$> parseRequest (C8.unpack disc.token_endpoint)
     decode . responseBody <$> httpLbs req man
 
+newtype UserClaims = UserClaims { isAdmin :: Bool }
+
+instance FromJSON UserClaims where
+    parseJSON (Object o) = UserClaims <$> o .: "is_admin"
+    parseJSON invalid = typeMismatch "Object" invalid
+
+type SessionStore = IORef (Map Int Bool)
+
+fetchUserClaims :: Manager -> Discovery -> AccessTokenResponse -> IO (Maybe UserClaims)
+fetchUserClaims man disc atr = do
+    req <- parseRequest (C8.unpack disc.userinfo_endpoint)
+    let req' = req { HC.requestHeaders = [("Authorization", "Bearer " <> access_token atr)] }
+    decode . responseBody <$> httpLbs req' man
+
 addSessionHeader :: AccessTokenResponse -> ResponseHeaders -> ResponseHeaders
 addSessionHeader atr = (("Set-Cookie", "session=" <> C8.pack (show atr.credentials_id) <> "; HttpOnly") :)
 
 destroySessionHeader :: Request -> Maybe Header
 destroySessionHeader req = (\session -> ("Set-Cookie", "session=" <> session <> "; HttpOnly; Max-Age=-1")) <$> checkSessionCookie req
 
-requireSession :: Manager -> Discovery -> EnvCredentials -> Middleware
-requireSession man disc creds app req res
-    | pathInfo req == ["logout"] = res $ responseLBS status200 ([("Location", "/")] <> maybeToList (destroySessionHeader req)) ""
-    | pathInfo req == ["callback"] && verifyStateCookie req = case join $ "code" `lookup` queryString req of
-        Just code -> requestAuthToken man disc creds code >>= \case
-            Just atr -> res $ responseLBS status302 (addSessionHeader atr [("Location", "/")]) ""
-            Nothing -> res $ responseLBS status500 [] "Could not parse access token response from koala"
-        Nothing -> res $ responseLBS status500 [] "Invalid parameters to oauth callback url"
-    | pathInfo req == ["callback"] = res $ responseLBS status403 [] "Invalid state parameter"
+requireSession :: SessionStore -> Manager -> Discovery -> EnvCredentials -> Middleware
+requireSession store man disc creds app req res
+    | pathInfo req == ["logout"] =
+        res $ responseLBS status200 ([("Location", "/")] <> maybeToList (destroySessionHeader req)) ""
+    | pathInfo req == ["callback"] && verifyStateCookie req =
+        case join $ "code" `lookup` queryString req of
+            Just code -> requestAuthToken man disc creds code >>= \case
+                Just atr -> fetchUserClaims man disc atr >>= \case
+                    Just claims -> do
+                        putStrLn $ "[auth] credentials_id=" ++ show (credentials_id atr) ++ " is_admin=" ++ show (isAdmin claims)
+                        modifyIORef store (Map.insert (credentials_id atr) (isAdmin claims))
+                        res $ responseLBS status302 (addSessionHeader atr [("Location", "/")]) ""
+                    Nothing ->
+                        res $ responseLBS status500 [] "Could not fetch user claims"
+                Nothing ->
+                    res $ responseLBS status500 [] "Could not parse access token response from koala"
+            Nothing ->
+                res $ responseLBS status500 [] "Invalid parameters to oauth callback url"
+    | pathInfo req == ["callback"] =
+        res $ responseLBS status403 [] "Invalid state parameter"
     | isNothing (checkSessionCookie req) = do
         state <- C8.pack <$> replicateM 10 (getStdRandom (randomR ('a', 'z')))
         let redirectUrl = disc.authorization_endpoint
@@ -106,4 +137,8 @@ requireSession man disc creds app req res
                 <> "&scope=openid%20member-read%20email%20profile"
                 <> "&state=" <> state
         res $ responseLBS status302 [("Location", redirectUrl), ("Set-Cookie", "state=" <> state <> "; HttpOnly")] ""
-    | otherwise = app req res
+    | otherwise = do
+        store' <- readIORef store
+        let sessionId = read . C8.unpack <$> checkSessionCookie req
+            admin     = maybe False (\sid -> Map.findWithDefault False sid store') sessionId
+        app req res

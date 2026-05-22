@@ -2,78 +2,14 @@
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# HLINT ignore "Use catMaybes" #-}
 
-module KBG.Styles (layout, formFields, mainPage, renderField, notFoundPage) where
+module KBG.Layout (layout) where
 
 import Text.Blaze.Html
 import qualified Text.Blaze.Html5 as H
 import Data.Text (Text)
 import qualified Data.Text as T
 import Text.Blaze.Html5.Attributes as HA
-import Data.List (lookup)
 import Prelude hiding (lookup)
-
-formFields :: [(Text, Text, Text)]
-formFields =
-    [ ("voo",   "Voorzitter",     "Iris van der Zwart")
-    , ("sec",   "Secretaris",     "Bram de Haas")
-    , ("pen",   "Penningmeester", "Chion Craane")
-    , ("int",   "Intern",         "Rens van Moorsel")
-    , ("ext",   "Extern",         "Isabelle Wittebols")
-    , ("ond",   "Onderwijs",      "Jari van Polen")
-    ]
-
-mainPage :: [(String, String)] -> Maybe String -> Markup
-mainPage prefilled banner = layout $ do
-    case banner of
-        Nothing  -> mempty
-        Just msg -> H.div ! HA.class_ "banner" $ H.toHtml msg
-    H.form ! HA.action "/" ! HA.method "post" ! HA.id "mainForm" $ do
-        mapM_ (renderField prefilled) formFields
-        H.input ! HA.type_ "submit" ! HA.value "Opslaan"
-        validationScript
-
-notFoundPage :: Markup
-notFoundPage = layout $ do
-    H.h1 "404 - Not Found"
-    H.p "Have you tried turning it off and on again?"
-
-renderField :: [(String, String)] -> (Text, Text, Text) -> Markup
-renderField prefilled (fieldId, label_, placeholder_) =
-    H.div ! HA.class_ "field" $ do
-        H.label ! HA.for (textValue fieldId) $ H.toHtml label_
-        let val = maybe "" T.pack (Data.List.lookup (T.unpack fieldId) prefilled)
-        H.input ! HA.type_ "text"
-                ! HA.id    (textValue fieldId)
-                ! HA.name  (textValue fieldId)
-                ! HA.placeholder (textValue placeholder_)
-                ! HA.autocomplete "off"
-                ! HA.value (textValue val)
-        H.span  ! HA.id (textValue (fieldId <> "-error"))
-                ! HA.class_ "error-msg" $ ""
-
-validationScript :: Markup
-validationScript = H.script $ H.toHtml $ T.unlines
-    [ "document.getElementById('mainForm').addEventListener('submit', function(e) {"
-    , "  var fields = " <> fieldList <> ";"
-    , "  var ok = true;"
-    , "  fields.forEach(function(id) {"
-    , "    var el = document.getElementById(id);"
-    , "    var err = document.getElementById(id + '-error');"
-    , "    if (!el.value.trim()) {"
-    , "      el.classList.add('error');"
-    , "      err.textContent = ' This field is required.';"
-    , "      ok = false;"
-    , "    }"
-    , "    el.addEventListener('input', function() {"
-    , "      el.classList.remove('error');"
-    , "      err.textContent = '';"
-    , "    }, { once: true });"
-    , "  });"
-    , "  if (!ok) e.preventDefault();"
-    , "});"
-    ]
-  where
-    fieldList = "['" <> T.intercalate "','" (map (\(f,_,_) -> f) formFields) <> "']"
 
 layout :: Markup -> Markup
 layout body = H.html $ do
