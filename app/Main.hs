@@ -87,7 +87,9 @@ app envCreds req res = do
             res $ htmlResponse status200 (renderPage (mainPage submitted (Just "Je inzending is opgeslagen!")))
         ("GET", ["admin"]) ->
             if admin
-                then res $ htmlResponse status200 (renderPage adminPage)
+                then do
+                    subs <- withDb envCreds.databaseURL getAllSubmissions
+                    res $ htmlResponse status200 (renderPage (adminPage subs))
                 else res $ htmlResponse status403 (renderPage notFoundPage)
         _ -> res $ htmlResponse status404 (renderPage notFoundPage)
 

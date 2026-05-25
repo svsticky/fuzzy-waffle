@@ -7,7 +7,7 @@
 {-# HLINT ignore "Use bimap" #-}
 {-# HLINT ignore "Use void" #-}
 
-module KBG.DB (withDb, initDb, saveSubmission, Submission, getAllSubmissions, getSubmissionByUserId) where
+module KBG.DB (withDb, initDb, saveSubmission, Submission(..), getAllSubmissions, getSubmissionByUserId) where
 
 import Database.PostgreSQL.Simple
 import Database.PostgreSQL.Simple.FromRow

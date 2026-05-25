@@ -10,7 +10,6 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import Text.Blaze.Html5.Attributes as HA
 import Prelude hiding (lookup)
-import KBG.Layout
 import Data.List
 
 formFields :: [(Text, Text, Text)]

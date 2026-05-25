@@ -7,7 +7,6 @@ module KBG.Pages.NotFound (notFoundPage) where
 import Text.Blaze.Html
 import qualified Text.Blaze.Html5 as H
 import Prelude hiding (lookup)
-import KBG.Layout
 
 notFoundPage :: Markup
 notFoundPage = do
