@@ -26,6 +26,7 @@ import qualified Data.Map.Strict as Map
 
 import KBG.Config (loadEnvCredentials, EnvCredentials(..))
 import KBG.Auth (discovery, requireSession, parseCookies, SessionStore)
+import KBG.Layout (renderPage)
 import KBG.Pages.NotFound
 import KBG.Pages.Admin
 import KBG.Pages.Index
@@ -67,13 +68,12 @@ app envCreds store req res = do
     store' <- readIORef store
     let userId  = getUserId req
         admin   = maybe False (\uid -> Map.findWithDefault False uid store') userId
-    putStrLn $ "[app] userId=" ++ show userId ++ " admin=" ++ show admin
     case (requestMethod req, pathInfo req) of
         ("GET", path) | path `elem` [[], ["callback"]] -> do
             existing <- case userId of
                 Nothing  -> return []
                 Just uid -> withDb envCreds.databaseURL (getSubmissionByUserId uid)
-            res $ htmlResponse status200 (renderHtml (mainPage existing Nothing))
+            res $ htmlResponse status200 (renderPage (mainPage existing Nothing))
         ("POST", []) -> do
             (params, _) <- parseRequestBody lbsBackEnd req
             let fields = map (\(k,v) -> (C8.unpack k, C8.unpack v)) params
@@ -85,12 +85,12 @@ app envCreds store req res = do
                     withDb envCreds.databaseURL $ \conn -> saveSubmission conn uid fields
                     putStrLn $ "[db] Saved submission for user_id " ++ show uid ++ ": " ++ show fields
             let submitted = map (\(f,_,_) -> (T.unpack f, maybe "" T.unpack (lookupParam f params))) formFields
-            res $ htmlResponse status200 (renderHtml (mainPage submitted (Just "Je inzending is opgeslagen!")))
+            res $ htmlResponse status200 (renderPage (mainPage submitted (Just "Je inzending is opgeslagen!")))
         ("GET", ["admin"]) ->
             if admin
-                then res $ htmlResponse status200 (renderHtml adminPage)
-                else res $ htmlResponse status403 (renderHtml notFoundPage)
-        _ -> res $ htmlResponse status404 (renderHtml notFoundPage)
+                then res $ htmlResponse status200 (renderPage adminPage)
+                else res $ htmlResponse status403 (renderPage notFoundPage)
+        _ -> res $ htmlResponse status404 (renderPage notFoundPage)
 
 htmlResponse :: Status -> BSL.ByteString -> W.Response
 htmlResponse status = responseLBS status [("Content-Type", "text/html; charset=utf-8")]

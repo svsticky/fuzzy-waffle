@@ -1,27 +1,56 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# HLINT ignore "Use catMaybes" #-}
-
-module KBG.Layout (layout) where
-
+module KBG.Layout (renderPage) where
 import Text.Blaze.Html
 import qualified Text.Blaze.Html5 as H
 import Data.Text (Text)
 import qualified Data.Text as T
 import Text.Blaze.Html5.Attributes as HA
 import Prelude hiding (lookup)
+import Text.Blaze.Html.Renderer.Utf8
+import Data.ByteString.Lazy
 
-layout :: Markup -> Markup
-layout body = H.html $ do
-    H.head $ do
-        H.meta ! HA.charset "utf-8"
-        H.meta ! HA.name "viewport" ! HA.content "width=device-width, initial-scale=1"
-        H.title "KandidaatsBestuurGokken"
-        H.style $ H.toHtml styles
-    H.body $
-        H.div ! HA.class_ "card" $ do
-            H.h1 "KandidaatsBestuurGokken"
-            body
+renderPage :: Markup -> ByteString
+renderPage page = renderHtml $ layout sidebar page
+
+layout :: Markup -> Markup -> Markup
+layout nav body = H.html $ do
+  H.head $ do
+    H.meta ! HA.charset "utf-8"
+    H.meta ! HA.name "viewport" ! HA.content "width=device-width, initial-scale=1"
+    H.title "KandidaatsBestuurGokken"
+    H.style $ H.toHtml styles
+  H.body $ do
+    nav
+    H.div ! HA.id "main" ! HA.class_ "main-content" $
+      H.div ! HA.class_ "card" $ do
+        H.h1 "KandidaatsBestuurGokken"
+        body
+    H.script $ H.toHtml sidebarScript
+
+sidebar :: Markup
+sidebar =
+  H.nav ! HA.id "sidebar" ! HA.class_ "sidebar collapsed" $ do
+    H.button
+      ! HA.id "sidebar-toggle"
+      ! HA.class_ "sidebar-toggle"
+      ! H.customAttribute "onclick" "toggleSidebar()" $
+      H.preEscapedToHtml ("&#9776;" :: Text)
+    H.div ! HA.class_ "sidebar-content" $ do
+      H.p ! HA.class_ "sidebar-label" $ "Navigation"
+      H.a ! HA.href "/" ! HA.class_ "sidebar-link" $ "Home"
+      H.a ! HA.href "/admin" ! HA.class_ "sidebar-link" $ "Admin"
+
+sidebarScript :: Text
+sidebarScript = T.unlines
+  [ "function toggleSidebar() {"
+  , "  var s = document.getElementById('sidebar');"
+  , "  var m = document.getElementById('main');"
+  , "  s.classList.toggle('collapsed');"
+  , "  m.classList.toggle('sidebar-open');"
+  , "}"
+  ]
 
 styles :: Text
 styles = T.unlines
@@ -35,6 +64,7 @@ styles = T.unlines
     , "  --text:        #ede8e3;"
     , "  --muted:       #7a7068;"
     , "  --radius:      6px;"
+    , "  --sidebar-w:   200px;"
     , "}"
     , "*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }"
     , "body {"
@@ -43,9 +73,82 @@ styles = T.unlines
     , "  font-family: 'DM Sans', sans-serif;"
     , "  min-height: 100vh;"
     , "  display: flex;"
+    , "}"
+    , ".sidebar {"
+    , "  position: fixed;"
+    , "  top: 0; left: 0;"
+    , "  display: flex;"
+    , "  flex-direction: column;"
+    , "  padding: 1rem 0;"
+    , "  transition: width 0.25s ease, background 0.25s ease, border-color 0.25s ease;"
+    , "  overflow: hidden;"
+    , "  z-index: 100;"
+    , "  width: var(--sidebar-w);"
+    , "  background: var(--surface);"
+    , "  border-right: 1px solid var(--border);"
+    , "  bottom: 0;"
+    , "}"
+    , ".sidebar.collapsed {"
+    , "  width: auto;"
+    , "  background: transparent;"
+    , "  border-right: 1px solid transparent;"
+    , "  bottom: auto;"
+    , "}"
+    , ".sidebar-toggle {"
+    , "  background: none;"
+    , "  border: none;"
+    , "  color: var(--muted);"
+    , "  font-size: 1.25rem;"
+    , "  cursor: pointer;"
+    , "  padding: 0.25rem 0.75rem 0.75rem;"
+    , "  text-align: left;"
+    , "  transition: color 0.15s ease;"
+    , "  align-self: flex-start;"
+    , "}"
+    , ".sidebar-toggle:hover { color: var(--accent); }"
+    , ".sidebar-content {"
+    , "  display: flex;"
+    , "  flex-direction: column;"
+    , "  gap: 0.25rem;"
+    , "  padding: 0 0.75rem;"
+    , "  white-space: nowrap;"
+    , "}"
+    , ".sidebar-label {"
+    , "  font-size: 0.7rem;"
+    , "  font-weight: 500;"
+    , "  color: var(--muted);"
+    , "  text-transform: uppercase;"
+    , "  letter-spacing: 0.08em;"
+    , "  padding: 0 0.25rem 0.5rem;"
+    , "}"
+    , ".sidebar.collapsed .sidebar-content { opacity: 0; pointer-events: none; }"
+    , ".sidebar-link {"
+    , "  color: var(--text);"
+    , "  text-decoration: none;"
+    , "  font-size: 0.9rem;"
+    , "  padding: 0.4rem 0.5rem;"
+    , "  border-radius: var(--radius);"
+    , "  transition: background 0.15s ease, color 0.15s ease;"
+    , "}"
+    , ".sidebar-link:hover {"
+    , "  background: color-mix(in srgb, var(--accent) 15%, transparent);"
+    , "  color: var(--accent);"
+    , "}"
+    , ".main-content {"
+    , "  margin-left: 2.75rem;"
+    , "  transition: margin-left 0.25s ease;"
+    , "  flex: 1;"
+    , "  display: flex;"
     , "  align-items: center;"
     , "  justify-content: center;"
     , "  padding: 2rem;"
+    , "  min-height: 100vh;"
+    , "}"
+    , ".main-content.sidebar-open {"
+    , "  margin-left: var(--sidebar-w);"
+    , "}"
+    , ".main-content.sidebar-collapsed {"
+    , "  margin-left: 2.75rem;"
     , "}"
     , ".card {"
     , "  background: var(--surface);"

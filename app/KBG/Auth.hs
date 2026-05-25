@@ -117,7 +117,6 @@ requireSession store man disc creds app req res
             Just code -> requestAuthToken man disc creds code >>= \case
                 Just atr -> fetchUserClaims man disc atr >>= \case
                     Just claims -> do
-                        putStrLn $ "[auth] credentials_id=" ++ show (credentials_id atr) ++ " is_admin=" ++ show (isAdmin claims)
                         modifyIORef store (Map.insert (credentials_id atr) (isAdmin claims))
                         res $ responseLBS status302 (addSessionHeader atr [("Location", "/")]) ""
                     Nothing ->

@@ -24,7 +24,7 @@ formFields =
     ]
 
 mainPage :: [(String, String)] -> Maybe String -> Markup
-mainPage prefilled banner = layout $ do
+mainPage prefilled banner = do
     case banner of
         Nothing  -> mempty
         Just msg -> H.div ! HA.class_ "banner" $ H.toHtml msg
