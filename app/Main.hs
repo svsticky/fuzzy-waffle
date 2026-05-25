@@ -45,13 +45,12 @@ main = do
     manager <- newTlsManager
     disc <- discovery manager envCreds
     putStrLn "[startup] OIDC discovery done"
-    store <- newIORef Map.empty
     putStrLn $ "[startup] Server started at 0.0.0.0:" ++ show envCreds.port
     let settings = setPort envCreds.port
                  $ setHost "0.0.0.0"
                  $ setLogger logRequest
                  $ defaultSettings
-    runSettings settings (requireSession store manager disc envCreds (app envCreds store))
+    runSettings settings (requireSession manager disc envCreds (app envCreds))
 
 logRequest :: Request -> Status -> Maybe Integer -> IO ()
 logRequest req status _ = do
@@ -63,11 +62,11 @@ logRequest req status _ = do
         ++ " -> "
         ++ show (statusCode status)
 
-app :: EnvCredentials -> SessionStore -> Application
-app envCreds store req res = do
-    store' <- readIORef store
-    let userId  = getUserId req
-        admin   = maybe False (\uid -> Map.findWithDefault False uid store') userId
+app :: EnvCredentials -> Application
+app envCreds req res = do
+    let session = getSession req
+        userId = fst <$> session
+        admin = maybe False snd session
     case (requestMethod req, pathInfo req) of
         ("GET", path) | path `elem` [[], ["callback"]] -> do
             existing <- case userId of
@@ -99,8 +98,10 @@ lookupParam :: Text -> [(BS.ByteString, BS.ByteString)] -> Maybe Text
 lookupParam key params = decodeUtf8 <$> lookup (encodeUtf8_ key) params
     where encodeUtf8_ = Data.Text.Encoding.encodeUtf8
 
-getUserId :: Request -> Maybe Int
-getUserId req = do
+getSession :: Request -> Maybe (Int, Bool)
+getSession req = do
     cookie <- lookup "Cookie" (requestHeaders req)
     val    <- lookup "session" (parseCookies cookie)
-    readMaybe (C8.unpack val)
+    case C8.split ':' val of
+        [uid, adm] -> (,) <$> readMaybe (C8.unpack uid) <*> pure (adm == "1")
+        _          -> Nothing
