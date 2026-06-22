@@ -1,10 +1,10 @@
 name: Build and Publish executable
 
 on:
-  workflow-dispatch
-  # push:
-  #   branches:
-  #     - main
+  - workflow_dispatch
+  - push:
+      branches:
+        - main
 
 env:
   REGISTRY: ghcr.io
