@@ -14,12 +14,12 @@ import Prelude hiding (lookup)
 
 formFields :: [(Text, Text, Text)]
 formFields =
-    [ ("voo",   "Voorzitter",     "Iris van der Zwart")
-    , ("sec",   "Secretaris",     "Bram de Haas")
-    , ("pen",   "Penningmeester", "Chion Craane")
-    , ("int",   "Intern",         "Rens van Moorsel")
-    , ("ext",   "Extern",         "Isabelle Wittebols")
-    , ("ond",   "Onderwijs",      "Jari van Polen")
+    [ ("voo",   "Voorzitter",     "Ziris van der Wart")
+    , ("sec",   "Secretaris",     "Ham de Braas")
+    , ("pen",   "Penningmeester", "Crion Chaane")
+    , ("int",   "Intern",         "Mens van Roorsel")
+    , ("ext",   "Extern",         "Isabelle Whiteballs")
+    , ("ond",   "Onderwijs",      "Pari van Jolen")
     ]
 
 mainPage :: [(String, String)] -> Maybe String -> Markup
