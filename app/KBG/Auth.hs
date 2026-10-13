@@ -8,7 +8,7 @@ module KBG.Auth (requireSession, discovery, Discovery, EnvCredentials(..), loadE
 import Network.Wai
 import Network.HTTP.Client (responseBody, Manager, httpLbs, parseRequest, applyBasicAuth, urlEncodedBody)
 import Network.HTTP.Types
-import Data.Maybe (fromJust, isNothing, isJust, maybeToList)
+import Data.Maybe (fromJust, isNothing, isJust, maybeToList, fromMaybe)
 
 import Data.ByteString (StrictByteString, breakSubstring)
 import qualified Data.ByteString as BSS
@@ -18,6 +18,16 @@ import Data.Aeson.Types (typeMismatch)
 import Data.Aeson
 import Control.Monad
 import System.Random
+
+import qualified Data.Aeson as A
+import qualified Data.Aeson.KeyMap as KM
+import qualified Data.ByteString.Base64.URL as B64
+import qualified Data.ByteString.Char8 as BC
+import qualified Data.ByteString.Lazy as BL
+import qualified Data.Text as T
+import qualified Data.Text.Encoding as TE
+
+import Debug.Trace (trace)
 
 import KBG.Config (EnvCredentials(..), loadEnvCredentials)
 
@@ -62,28 +72,41 @@ verifyStateCookie req = isJust do
 data AccessTokenResponse = AccessTokenResponse
     { access_token :: StrictByteString
     , expires_in :: Int
-    , credentials_id :: Int
+    , sid :: StrictByteString
     }
 
 instance FromJSON AccessTokenResponse where
-    parseJSON (Object o) = AccessTokenResponse . C8.pack
-        <$> o .: "access_token"
-        <*> o .: "expires_in"
-        <*> o .: "credentials_id"
-    parseJSON invalid = typeMismatch "Object" invalid
+    parseJSON = withObject "AccessTokenResponse" \o -> do
+        tok <- o .: "access_token"
+        s   <- either fail pure (extractSid tok)
+        AccessTokenResponse (TE.encodeUtf8 tok)
+            <$> o .: "expires_in"
+            <*> pure (TE.encodeUtf8 s)
 
 redirectUri :: EnvCredentials -> C8.ByteString
 redirectUri creds = C8.pack creds.host <> "/callback"
 
-requestAuthToken :: Manager -> Discovery -> EnvCredentials -> StrictByteString -> IO (Maybe AccessTokenResponse)
+extractSid :: T.Text -> Either String T.Text
+extractSid jwt = do
+  payload <- case T.splitOn "." jwt of
+    [_, p, _] -> Right p
+    _         -> Left "Invalid JWT: expected 3 dot-separated parts"
+  decoded <- B64.decodeUnpadded (TE.encodeUtf8 payload)
+  obj     <- A.eitherDecodeStrict decoded
+  case KM.lookup "sid" obj of
+    Just (A.String s) -> Right s
+    Just _            -> Left "sid is not a string"
+    Nothing           -> Left "No sid claim in token"
+
+requestAuthToken :: Manager -> Discovery -> EnvCredentials -> StrictByteString -> IO (Either String AccessTokenResponse)
 requestAuthToken man disc creds code = do
     req <-  urlEncodedBody [("grant_type", "authorization_code"), ("code", code), ("redirect_uri", redirectUri creds)]
-          . applyBasicAuth creds.clientId creds.clientSecret
+            . applyBasicAuth creds.clientId creds.clientSecret
         <$> parseRequest (C8.unpack disc.token_endpoint)
-    decode . responseBody <$> httpLbs req man
+    eitherDecode . responseBody <$> httpLbs req man
 
 addSessionHeader :: AccessTokenResponse -> ResponseHeaders -> ResponseHeaders
-addSessionHeader atr = (("Set-Cookie", "session=" <> C8.pack (show atr.credentials_id) <> "; HttpOnly") :)
+addSessionHeader atr = (("Set-Cookie", "session=" <> atr.sid <> "; HttpOnly; Path=/; SameSite=Lax") :)
 
 destroySessionHeader :: Request -> Maybe Header
 destroySessionHeader req = (\session -> ("Set-Cookie", "session=" <> session <> "; HttpOnly; Max-Age=-1")) <$> checkSessionCookie req
@@ -93,8 +116,8 @@ requireSession man disc creds app req res
     | pathInfo req == ["logout"] = res $ responseLBS status200 ([("Location", "/")] <> maybeToList (destroySessionHeader req)) ""
     | pathInfo req == ["callback"] && verifyStateCookie req = case join $ "code" `lookup` queryString req of
         Just code -> requestAuthToken man disc creds code >>= \case
-            Just atr -> res $ responseLBS status302 (addSessionHeader atr [("Location", "/")]) ""
-            Nothing -> res $ responseLBS status500 [] "Could not parse access token response from koala"
+            Right atr -> res $ responseLBS status302 (addSessionHeader atr [("Location", "/")]) ""
+            Left err  -> res $ responseLBS status500 [] (BL.fromStrict (C8.pack ("Could not parse token response: " <> err)))
         Nothing -> res $ responseLBS status500 [] "Invalid parameters to oauth callback url"
     | pathInfo req == ["callback"] = res $ responseLBS status403 [] "Invalid state parameter"
     | isNothing (checkSessionCookie req) = do
@@ -103,7 +126,7 @@ requireSession man disc creds app req res
                 <> "?response_type=code"
                 <> "&client_id=" <> creds.clientId
                 <> "&redirect_uri=" <> redirectUri creds
-                <> "&scope=openid%20member-read%20email%20profile"
+                <> "&scope=openid%20email%20profile"
                 <> "&state=" <> state
         res $ responseLBS status302 [("Location", redirectUrl), ("Set-Cookie", "state=" <> state <> "; HttpOnly")] ""
     | otherwise = app req res

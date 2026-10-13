@@ -1,0 +1,13 @@
+
+# Docker Compose file for a postgres image
+version: "3"
+services:
+  postgres-db:
+    image: postgres
+    restart: no
+    environment:
+      POSTGRES_USER: kbg
+      POSTGRES_PASSWORD: "kbg"
+    
+    ports:
+    - "5432:5432"
