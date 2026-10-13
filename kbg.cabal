@@ -62,7 +62,7 @@ executable kbg
 
     -- Other library packages from which modules are imported.
     build-depends:    aeson,
-                      base, 
+                      base, base64-bytestring,
                       blaze-html, 
                       bytestring,
                       dotenv,
