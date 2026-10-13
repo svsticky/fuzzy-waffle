@@ -19,6 +19,8 @@ import Data.Aeson
 import Control.Monad
 import System.Random
 
+import Debug.Trace (trace)
+
 import KBG.Config (EnvCredentials(..), loadEnvCredentials)
 
 data Discovery = Discovery
@@ -76,11 +78,11 @@ redirectUri :: EnvCredentials -> C8.ByteString
 redirectUri creds = C8.pack creds.host <> "/callback"
 
 requestAuthToken :: Manager -> Discovery -> EnvCredentials -> StrictByteString -> IO (Maybe AccessTokenResponse)
-requestAuthToken man disc creds code = do
+requestAuthToken man disc creds code = trace (show code) do
     req <-  urlEncodedBody [("grant_type", "authorization_code"), ("code", code), ("redirect_uri", redirectUri creds)]
           . applyBasicAuth creds.clientId creds.clientSecret
         <$> parseRequest (C8.unpack disc.token_endpoint)
-    decode . responseBody <$> httpLbs req man
+    trace (show req) decode . responseBody <$> httpLbs req man
 
 addSessionHeader :: AccessTokenResponse -> ResponseHeaders -> ResponseHeaders
 addSessionHeader atr = (("Set-Cookie", "session=" <> C8.pack (show atr.credentials_id) <> "; HttpOnly") :)
@@ -103,7 +105,7 @@ requireSession man disc creds app req res
                 <> "?response_type=code"
                 <> "&client_id=" <> creds.clientId
                 <> "&redirect_uri=" <> redirectUri creds
-                <> "&scope=openid%20member-read%20email%20profile"
+                <> "&scope=openid%20email%20profile"
                 <> "&state=" <> state
         res $ responseLBS status302 [("Location", redirectUrl), ("Set-Cookie", "state=" <> state <> "; HttpOnly")] ""
     | otherwise = app req res
