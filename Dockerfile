@@ -1,4 +1,4 @@
-FROM haskell:9.6.7-slim AS build
+FROM haskell:9.12.4 AS build
 
 WORKDIR /opt/kbg
 
