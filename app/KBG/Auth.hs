@@ -2,6 +2,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE BlockArguments #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module KBG.Auth (requireSession, discovery, Discovery, EnvCredentials(..), loadEnvCredentials, parseCookies) where
 
@@ -9,6 +10,7 @@ import Network.Wai
 import Network.HTTP.Client (responseBody, Manager, httpLbs, parseRequest, applyBasicAuth, urlEncodedBody)
 import Network.HTTP.Types
 import Data.Maybe (fromJust, isNothing, isJust, maybeToList, fromMaybe)
+import Control.Exception (SomeException, displayException, try)
 
 import Data.ByteString (StrictByteString, breakSubstring)
 import qualified Data.ByteString as BSS
@@ -42,10 +44,15 @@ instance FromJSON Discovery where
         <*> o .: "token_endpoint"
     parseJSON invalid = typeMismatch "Object" invalid
 
-discovery :: Manager -> EnvCredentials -> IO Discovery
+discovery :: Manager -> EnvCredentials -> IO (Either String Discovery)
 discovery man envCreds = do
-    req <- parseRequest envCreds.oAuthReq
-    fromJust . decode . responseBody <$> httpLbs req man
+    result <- try $ do
+        req <- parseRequest envCreds.oAuthReq
+        eitherDecode . responseBody <$> httpLbs req man
+    pure $ case result of
+        Left (e :: SomeException) -> Left ("Could not fetch OIDC discovery document: " <> displayException e)
+        Right (Left err)          -> Left ("Could not parse OIDC discovery document: " <> err)
+        Right (Right disc)        -> Right disc
 
 tokenise :: StrictByteString -> StrictByteString -> [StrictByteString]
 tokenise x y =

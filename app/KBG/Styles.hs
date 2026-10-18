@@ -2,7 +2,7 @@
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# HLINT ignore "Use catMaybes" #-}
 
-module KBG.Styles (layout, formFields, mainPage, renderField, notFoundPage) where
+module KBG.Styles (layout, formFields, mainPage, renderField, notFoundPage, oopsPage) where
 
 import Text.Blaze.Html
 import qualified Text.Blaze.Html5 as H
@@ -36,6 +36,15 @@ notFoundPage :: Markup
 notFoundPage = layout $ do
     H.h1 "404 - Not Found"
     H.p "Have you tried turning it off and on again?"
+
+oopsPage :: String -> Markup
+oopsPage err = layout $ do
+    H.h1 "418 - Oops!"
+    H.p "KBG is stukk :("
+    H.p "Kijk Julius heel boos aan, of fix het zelf:"
+    H.a "https://github.com/svsticky/fuzzy-waffle" ! HA.href "https://github.com/svsticky/fuzzy-waffle"
+    H.p "Wat er misging:"
+    H.pre ! HA.class_ "error-detail" $ H.toHtml err
 
 renderField :: [(String, String)] -> (Text, Text, Text) -> Markup
 renderField prefilled (fieldId, label_, placeholder_) =
@@ -186,5 +195,17 @@ styles = T.unlines
     , "  cursor: pointer;"
     , "  transition: background 0.15s ease;"
     , "}"
+    , ".error-detail {"
+    , "  background: var(--bg);"
+    , "  border: 1px solid var(--border);"
+    , "  border-radius: var(--radius);"
+    , "  color: #e74c3c;"
+    , "  font-size: 0.8125rem;"
+    , "  padding: 0.625rem 0.875rem;"
+    , "  margin-bottom: 1.125rem;"
+    , "  white-space: pre-wrap;"
+    , "  word-break: break-word;"
+    , "}"
+    , "p { margin-bottom: 0.75rem; }"
     , "input[type=submit]:hover { background: var(--accent-dim); }"
     ]
