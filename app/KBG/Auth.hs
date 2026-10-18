@@ -8,7 +8,7 @@ module KBG.Auth (requireSession, discovery, Discovery, EnvCredentials(..), loadE
 import Network.Wai
 import Network.HTTP.Client (responseBody, Manager, httpLbs, parseRequest, applyBasicAuth, urlEncodedBody)
 import Network.HTTP.Types
-import Data.Maybe (fromJust, isNothing, isJust, maybeToList, fromMaybe)
+import Data.Maybe (isNothing, isJust, maybeToList, fromMaybe)
 
 import Data.ByteString (StrictByteString, breakSubstring)
 import qualified Data.ByteString as BSS
@@ -29,6 +29,9 @@ import qualified Data.Text.Encoding as TE
 
 import Debug.Trace (trace)
 
+import Control.Exception (try)
+import System.IO (hPutStrLn, stderr)
+import qualified Network.HTTP.Client as HC
 import KBG.Config (EnvCredentials(..), loadEnvCredentials)
 
 data Discovery = Discovery
@@ -44,8 +47,24 @@ instance FromJSON Discovery where
 
 discovery :: Manager -> EnvCredentials -> IO Discovery
 discovery man envCreds = do
-    req <- parseRequest envCreds.oAuthReq
-    fromJust . decode . responseBody <$> httpLbs req man
+    let url = envCreds.oAuthReq
+    req0 <- parseRequest url
+    let req = req0 { HC.responseTimeout = HC.responseTimeoutMicro 10000000 }
+    hPutStrLn stderr ("discovery: GET " <> url)
+    res <- try (httpLbs req man) >>= \case
+        Right r -> pure r
+        Left e  -> failWith ("discovery: request to " <> url <> " failed: " <> show (e :: HC.HttpException))
+    let code = statusCode (HC.responseStatus res)
+        body = responseBody res
+    case eitherDecode body of
+        Right d | code == 200 -> pure d
+        Right _  -> failWith ("discovery: " <> url <> " returned HTTP " <> show code)
+        Left err -> failWith ("discovery: " <> url <> " HTTP " <> show code
+                        <> ", cannot decode: " <> err
+                        <> " | body starts: " <> C8.unpack (BL.toStrict (BL.take 300 body)))
+  where
+    failWith :: String -> IO a
+    failWith msg = hPutStrLn stderr msg >> fail msg
 
 tokenise :: StrictByteString -> StrictByteString -> [StrictByteString]
 tokenise x y =
