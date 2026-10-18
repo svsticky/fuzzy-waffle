@@ -2,13 +2,15 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE BlockArguments #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module KBG.Auth (requireSession, discovery, Discovery, EnvCredentials(..), loadEnvCredentials, parseCookies) where
 
 import Network.Wai
 import Network.HTTP.Client (responseBody, Manager, httpLbs, parseRequest, applyBasicAuth, urlEncodedBody)
 import Network.HTTP.Types
-import Data.Maybe (isNothing, isJust, maybeToList, fromMaybe)
+import Data.Maybe (fromJust, isNothing, isJust, maybeToList, fromMaybe)
+import Control.Exception (SomeException, displayException, try)
 
 import Data.ByteString (StrictByteString, breakSubstring)
 import qualified Data.ByteString as BSS
@@ -45,26 +47,15 @@ instance FromJSON Discovery where
         <*> o .: "token_endpoint"
     parseJSON invalid = typeMismatch "Object" invalid
 
-discovery :: Manager -> EnvCredentials -> IO Discovery
+discovery :: Manager -> EnvCredentials -> IO (Either String Discovery)
 discovery man envCreds = do
-    let url = envCreds.oAuthReq
-    req0 <- parseRequest url
-    let req = req0 { HC.responseTimeout = HC.responseTimeoutMicro 10000000 }
-    hPutStrLn stderr ("discovery: GET " <> url)
-    res <- try (httpLbs req man) >>= \case
-        Right r -> pure r
-        Left e  -> failWith ("discovery: request to " <> url <> " failed: " <> show (e :: HC.HttpException))
-    let code = statusCode (HC.responseStatus res)
-        body = responseBody res
-    case eitherDecode body of
-        Right d | code == 200 -> pure d
-        Right _  -> failWith ("discovery: " <> url <> " returned HTTP " <> show code)
-        Left err -> failWith ("discovery: " <> url <> " HTTP " <> show code
-                        <> ", cannot decode: " <> err
-                        <> " | body starts: " <> C8.unpack (BL.toStrict (BL.take 300 body)))
-  where
-    failWith :: String -> IO a
-    failWith msg = hPutStrLn stderr msg >> fail msg
+    result <- try $ do
+        req <- parseRequest envCreds.oAuthReq
+        eitherDecode . responseBody <$> httpLbs req man
+    pure $ case result of
+        Left (e :: SomeException) -> Left ("Could not fetch OIDC discovery document: " <> displayException e)
+        Right (Left err)          -> Left ("Could not parse OIDC discovery document: " <> err)
+        Right (Right disc)        -> Right disc
 
 tokenise :: StrictByteString -> StrictByteString -> [StrictByteString]
 tokenise x y =

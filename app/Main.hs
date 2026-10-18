@@ -25,7 +25,7 @@ import Data.Time (getCurrentTime)
 
 import KBG.Config (loadEnvCredentials, EnvCredentials(..))
 import KBG.Auth (discovery, requireSession, parseCookies)
-import KBG.Styles (formFields, mainPage, notFoundPage)
+import KBG.Styles (formFields, mainPage, notFoundPage, oopsPage)
 import KBG.DB (withDb, initDb, saveSubmission, getAllSubmissions, getSubmissionByUserId)
 
 main :: IO ()
@@ -39,14 +39,23 @@ main = do
     putStrLn $ "[startup] Existing submissions: " ++ show (length subs)
     putStrLn "[startup] Fetching OIDC discovery document..."
     manager <- newTlsManager
-    disc <- discovery manager envCreds
-    putStrLn "[startup] OIDC discovery done"
+    discResult <- discovery manager envCreds
+    application <- case discResult of
+        Right disc -> do
+            putStrLn "[startup] OIDC discovery done"
+            return (requireSession manager disc envCreds (app envCreds))
+        Left err -> do
+            putStrLn $ "[startup] OIDC discovery failed: " ++ err
+            return (errorApp err)
     putStrLn $ "[startup] Server started at 0.0.0.0:" ++ show envCreds.port
     let settings = setPort envCreds.port
                  $ setHost "0.0.0.0"
                  $ setLogger logRequest
                    defaultSettings
-    runSettings settings (requireSession manager disc envCreds (app envCreds))
+    runSettings settings application
+
+errorApp :: String -> Application
+errorApp err _ res = res $ htmlResponse status418 (renderHtml (oopsPage err))
 
 logRequest :: Request -> Status -> Maybe Integer -> IO ()
 logRequest req status _ = do
