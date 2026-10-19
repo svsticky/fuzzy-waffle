@@ -10,7 +10,8 @@ import Network.Wai
 import Network.HTTP.Client (responseBody, Manager, httpLbs, parseRequest, applyBasicAuth, urlEncodedBody)
 import Network.HTTP.Types
 import Data.Maybe (fromJust, isNothing, isJust, maybeToList, fromMaybe)
-import Control.Exception (SomeException, displayException, try)
+import Control.Exception (try, catch, throwIO, displayException, SomeException)
+import Control.Concurrent (threadDelay)
 
 import Data.ByteString (StrictByteString, breakSubstring)
 import qualified Data.ByteString as BSS
@@ -48,14 +49,36 @@ instance FromJSON Discovery where
     parseJSON invalid = typeMismatch "Object" invalid
 
 discovery :: Manager -> EnvCredentials -> IO (Either String Discovery)
-discovery man envCreds = do
+discovery man envCreds = go (1 :: Int)
+    where
+    go n = do
+        r <- discoveryOnce man envCreds
+        case r of
+            Left err | n < 60 -> do
+                hPutStrLn stderr ("discovery attempt " <> show n
+                    <> " failed, retrying in 5s: " <> takeWhile (/= '\n') err)
+                threadDelay 5000000
+                go (n + 1)
+            _ -> pure r
+
+discoveryOnce :: Manager -> EnvCredentials -> IO (Either String Discovery)
+discoveryOnce man envCreds = do
     result <- try $ do
         req <- parseRequest envCreds.oAuthReq
-        eitherDecode . responseBody <$> httpLbs req man
+        res <- httpLbs req man
+        pure (HC.responseStatus res, responseBody res)
     pure $ case result of
-        Left (e :: SomeException) -> Left ("Could not fetch OIDC discovery document: " <> displayException e)
-        Right (Left err)          -> Left ("Could not parse OIDC discovery document: " <> err)
-        Right (Right disc)        -> Right disc
+        Left (e :: SomeException) ->
+            Left ("Could not fetch OIDC discovery document from " <> envCreds.oAuthReq
+                    <> "\n" <> displayException e)
+        Right (st, body) -> case eitherDecode body of
+            Right disc -> Right disc
+            Left err ->
+                Left ("Could not parse OIDC discovery document from " <> envCreds.oAuthReq
+                        <> "\nHTTP status: " <> show (statusCode st)
+                        <> "\nParser error: " <> err
+                        <> "\nResponse body (first 2000 bytes):\n"
+                        <> C8.unpack (BL.toStrict (BL.take 2000 body)))
 
 tokenise :: StrictByteString -> StrictByteString -> [StrictByteString]
 tokenise x y =
