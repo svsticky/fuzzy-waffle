@@ -56,7 +56,7 @@ discovery man envCreds = go (1 :: Int)
         case r of
             Left err | n < 60 -> do
                 hPutStrLn stderr ("discovery attempt " <> show n
-                    <> " failed, retrying in 5s: " <> takeWhile (/= '\n') err)
+                    <> " failed, retrying in 5s: " <> err)
                 threadDelay 5000000
                 go (n + 1)
             _ -> pure r
@@ -70,7 +70,7 @@ discoveryOnce man envCreds = do
     pure $ case result of
         Left (e :: SomeException) ->
             Left ("Could not fetch OIDC discovery document from " <> envCreds.oAuthReq
-                    <> "\n" <> displayException e)
+                    <> " Error: " <> displayException e)
         Right (st, body) -> case eitherDecode body of
             Right disc -> Right disc
             Left err ->
